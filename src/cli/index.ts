@@ -196,6 +196,9 @@ export function resolveCliInvocation(args: string[]): ResolvedCliInvocation {
   if (firstArg === '--help' || firstArg === '-h') {
     return { command: 'help', launchArgs: [] };
   }
+  if (firstArg === '--version' || firstArg === '-v') {
+    return { command: 'version', launchArgs: [] };
+  }
   if (!firstArg || firstArg.startsWith('--')) {
     return { command: 'launch', launchArgs: firstArg ? args : [] };
   }

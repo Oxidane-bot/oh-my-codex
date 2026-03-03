@@ -217,6 +217,20 @@ describe('resolveCliInvocation', () => {
     });
   });
 
+  it('resolves --version to the version command instead of launch', () => {
+    assert.deepEqual(resolveCliInvocation(['--version']), {
+      command: 'version',
+      launchArgs: [],
+    });
+  });
+
+  it('resolves -v to the version command instead of launch', () => {
+    assert.deepEqual(resolveCliInvocation(['-v']), {
+      command: 'version',
+      launchArgs: [],
+    });
+  });
+
   it('keeps unknown long flags as launch passthrough args', () => {
     assert.deepEqual(resolveCliInvocation(['--model', 'gpt-5']), {
       command: 'launch',
