@@ -260,6 +260,47 @@ export async function spawnEnterpriseSubordinateWorker(subordinateNodeId: string
   return updatedLive;
 }
 
+
+export async function shutdownEnterpriseLiveNode(nodeId: string, cwd: string = process.cwd()): Promise<EnterpriseLiveRuntimeSnapshot> {
+  const projectRoot = resolve(cwd);
+  const enterprise = await readEnterpriseRuntime(projectRoot);
+  const live = await readEnterpriseLiveRuntime(projectRoot);
+  if (!enterprise || !live) throw new Error('Enterprise live runtime has not been started.');
+  const worker = live.workers.find((entry) => entry.nodeId === nodeId);
+  if (!worker) throw new Error(`Enterprise live worker not found: ${nodeId}`);
+
+  await appendEnterpriseEvent(projectRoot, {
+    type: 'shutdown_requested',
+    nodeId,
+    summary: `Enterprise live worker shutdown requested for ${nodeId}`,
+    createdAt: new Date().toISOString(),
+    payload: { paneId: worker.paneId },
+  });
+
+  await enterpriseTmuxAdapter.killPane(worker.paneId);
+
+  const remainingWorkers = live.workers.filter((entry) => entry.nodeId !== nodeId);
+  const updatedLive: EnterpriseLiveRuntimeSnapshot = {
+    ...live,
+    workerPaneIds: remainingWorkers.map((entry) => entry.paneId),
+    workers: remainingWorkers,
+    updated_at: new Date().toISOString(),
+  };
+  await persistLiveRuntimeSnapshot(projectRoot, updatedLive);
+  await updateModeState('enterprise', {
+    live_worker_count: updatedLive.workers.length,
+    live_subordinate_count: updatedLive.workers.filter((entry) => entry.role === 'subordinate').length,
+    last_turn_at: updatedLive.updated_at,
+  }, projectRoot);
+  await appendEnterpriseEvent(projectRoot, {
+    type: 'shutdown_completed',
+    nodeId,
+    summary: `Enterprise live worker shutdown completed for ${nodeId}`,
+    createdAt: updatedLive.updated_at,
+  });
+  return updatedLive;
+}
+
 export async function updateEnterpriseLiveMonitor(
   updates: Parameters<typeof applyEnterpriseExecutionUpdates>[0],
   cwd: string = process.cwd(),

@@ -54,6 +54,16 @@ export const enterpriseTmuxAdapter = {
     return mod.createTeamSession(teamName, workerCount, cwd, workerLaunchArgs, workerStartups);
   },
 
+
+
+  async killPane(paneId: string): Promise<void> {
+    const result = spawnSync('tmux', ['kill-pane', '-t', paneId], { encoding: 'utf-8' });
+    if (result.error) throw result.error;
+    if (result.status !== 0) {
+      throw new Error((result.stderr || '').trim() || `tmux exited ${result.status}`);
+    }
+  },
+
   async destroyTmuxSession(sessionName: string): Promise<void> {
     const mod = await loadTmuxModule();
     return mod.destroyTeamSession(sessionName);

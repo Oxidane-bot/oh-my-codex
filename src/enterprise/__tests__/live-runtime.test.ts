@@ -115,3 +115,36 @@ describe('enterprise live runtime', () => {
     }
   });
 });
+
+
+  it('shuts down a single live subordinate node', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'omx-enterprise-live-'));
+    const previousTmux = process.env.TMUX;
+    process.env.TMUX = 'leader-session';
+    try {
+      const tmuxSession = await import('../tmux-adapter.js');
+      mock.method(tmuxSession.enterpriseTmuxAdapter, 'isTmuxAvailable', async () => true);
+      mock.method(tmuxSession.enterpriseTmuxAdapter, 'createTmuxSession', async () => ({
+        name: 'leader:1', workerCount: 1, cwd, workerPaneIds: ['%101'], leaderPaneId: '%100', hudPaneId: null, resizeHookName: null, resizeHookTarget: null,
+      }));
+      mock.method(tmuxSession.enterpriseTmuxAdapter, 'buildWorkerStartupCommand', async (_team: string, idx: number) => `codex --worker ${idx}`);
+      mock.method(tmuxSession.enterpriseTmuxAdapter, 'spawnPane', async () => '%102');
+      mock.method(tmuxSession.enterpriseTmuxAdapter, 'killPane', async () => {});
+
+      const runtime = await import('../runtime.js');
+      await runtime.startEnterpriseRuntime('issue 590', {}, cwd);
+      const liveRuntime = await import('../live-runtime.js');
+      await liveRuntime.startEnterpriseLiveRuntime(cwd);
+      const updated = await liveRuntime.shutdownEnterpriseLiveNode('subordinate-1', cwd);
+
+      assert.equal(updated.workers.some((worker) => worker.nodeId === 'subordinate-1'), false);
+      const reread = await runtime.readEnterpriseRuntime(cwd);
+      assert.equal(reread?.modeState.live_subordinate_count, 0);
+    } finally {
+      if (typeof previousTmux === 'string') process.env.TMUX = previousTmux;
+      else delete process.env.TMUX;
+      mock.restoreAll();
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+

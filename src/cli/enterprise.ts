@@ -25,6 +25,7 @@ import {
 import {
   readEnterpriseLiveRuntime,
   refreshEnterpriseLiveMonitor,
+  shutdownEnterpriseLiveNode,
   shutdownEnterpriseLiveRuntime,
   spawnEnterpriseSubordinateWorker,
   startEnterpriseLiveRuntime,
@@ -36,6 +37,7 @@ Usage: omx enterprise [options] "<task description>"
        omx enterprise status
        omx enterprise live-start
        omx enterprise shutdown
+       omx enterprise shutdown-node <node-id>
        omx enterprise refresh-monitor
        omx enterprise assign <lead-id> "<subject>:<scope>"
        omx enterprise escalate <node-id> "<summary>" [--details "..."]
@@ -60,6 +62,7 @@ Examples:
   omx enterprise --division "Research:investigate runtime reuse" --division "Execution:build runtime shell" "issue 590 phase 1"
   omx enterprise live-start
   omx enterprise assign division-1 "Verifier:verify runtime shell"
+  omx enterprise shutdown-node subordinate-1
   omx enterprise message subordinate-1 division-1 "verification complete"
   omx enterprise mailbox chairman-1
   omx enterprise escalate subordinate-1 "needs chairman attention" --details "blocked on shared file ownership"
@@ -247,7 +250,7 @@ async function renderInspect(kind: string, id: string | undefined): Promise<void
       if (!record) throw new Error(`Enterprise subordinate not found: ${id}`);
       const live = await readEnterpriseLiveRuntime(cwd);
       const liveWorker = live?.workers.find((worker) => worker.nodeId === id) ?? null;
-      console.log(JSON.stringify({ ...record, liveWorker }, null, 2));
+      console.log(JSON.stringify({ ...record, liveWorker, mailbox: await readEnterpriseMailbox(cwd, id) }, null, 2));
       return;
     }
     case 'division': {
@@ -346,6 +349,15 @@ export async function enterpriseCommand(args: string[]): Promise<void> {
   if (subcommand === 'shutdown') {
     await shutdownEnterpriseLiveRuntime();
     console.log('Enterprise live runtime shutdown complete.');
+    return;
+  }
+
+  if (subcommand === 'shutdown-node') {
+    const nodeId = args[1];
+    if (!nodeId) throw new Error('Usage: omx enterprise shutdown-node <node-id>');
+    const live = await shutdownEnterpriseLiveNode(nodeId);
+    console.log(`Enterprise live worker shutdown complete: ${nodeId}`);
+    console.log(JSON.stringify(live, null, 2));
     return;
   }
 

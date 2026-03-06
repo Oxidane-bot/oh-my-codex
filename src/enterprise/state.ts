@@ -262,6 +262,16 @@ export async function readEnterpriseMailbox(cwd: string, nodeId: string): Promis
   return JSON.parse(await readFile(path, 'utf-8')) as EnterpriseMailbox;
 }
 
+
+export async function readEnterpriseMailboxMessage(
+  cwd: string,
+  nodeId: string,
+  messageId: string,
+): Promise<EnterpriseMailboxMessage | null> {
+  const mailbox = await readEnterpriseMailbox(cwd, nodeId);
+  return mailbox.messages.find((entry) => entry.messageId === messageId) ?? null;
+}
+
 export async function markEnterpriseMailboxDelivered(cwd: string, nodeId: string, messageId: string): Promise<boolean> {
   const path = mailboxPath(cwd, nodeId);
   if (!existsSync(path)) return false;
