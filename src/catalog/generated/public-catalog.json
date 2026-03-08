@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-03-08T08:08:24.819Z",
-  "version": "2026.02.28.1",
+  "generatedAt": "2026-03-08T13:40:16Z",
+  "version": "2026.03.08.1",
   "counts": {
     "skillCount": 39,
     "promptCount": 29,
-    "activeSkillCount": 23,
-    "activeAgentCount": 18
+    "activeSkillCount": 22,
+    "activeAgentCount": 17
   },
   "coreSkills": [
     "autopilot",
@@ -139,8 +139,8 @@
     {
       "name": "security-review",
       "category": "shortcut",
-      "status": "active",
-      "canonical": "security-reviewer",
+      "status": "merged",
+      "canonical": "code-review",
       "core": false,
       "internalRequired": false
     },
@@ -366,7 +366,8 @@
     {
       "name": "security-reviewer",
       "category": "review",
-      "status": "active"
+      "status": "merged",
+      "canonical": "code-reviewer"
     },
     {
       "name": "performance-reviewer",
@@ -494,6 +495,10 @@
     {
       "name": "build-fix",
       "canonical": "build-fixer"
+    },
+    {
+      "name": "security-review",
+      "canonical": "code-review"
     },
     {
       "name": "frontend-ui-ux",

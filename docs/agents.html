@@ -21,6 +21,7 @@
     <main class="container">
       <h1>Agent Catalog</h1>
       <p class="muted">Organized by lane with routing tier and usage examples.</p>
+      <p class="muted">Security-focused review requests route to <code>/prompts:code-reviewer</code> as the public canonical review surface.</p>
 
       <h2>Build & Analysis</h2>
       <table>
@@ -43,9 +44,8 @@
           <tr><td>/prompts:style-reviewer</td><td>low</td><td>Formatting and naming conventions.</td><td><code>/prompts:style-reviewer "check style"</code></td></tr>
           <tr><td>/prompts:quality-reviewer</td><td>medium</td><td>Logic and maintainability defects.</td><td><code>/prompts:quality-reviewer "review PR"</code></td></tr>
           <tr><td>/prompts:api-reviewer</td><td>medium</td><td>API contracts and compatibility.</td><td><code>/prompts:api-reviewer "audit API changes"</code></td></tr>
-          <tr><td>/prompts:security-reviewer</td><td>medium</td><td>Security boundaries and vulnerabilities.</td><td><code>/prompts:security-reviewer "security audit"</code></td></tr>
           <tr><td>/prompts:performance-reviewer</td><td>medium</td><td>Performance and complexity bottlenecks.</td><td><code>/prompts:performance-reviewer "profile hotspots"</code></td></tr>
-          <tr><td>/prompts:code-reviewer</td><td>high</td><td>Comprehensive multi-axis code review.</td><td><code>/prompts:code-reviewer "comprehensive review"</code></td></tr>
+          <tr><td>/prompts:code-reviewer</td><td>high</td><td>Comprehensive multi-axis code review, including security-focused audits.</td><td><code>/prompts:code-reviewer "security review this branch"</code></td></tr>
         </tbody>
       </table>
 

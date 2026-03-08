@@ -135,9 +135,8 @@ Review Lane:
 - `/prompts:style-reviewer`: Formatting, naming, idioms, lint conventions
 - `/prompts:quality-reviewer`: Logic defects, maintainability, anti-patterns
 - `/prompts:api-reviewer`: API contracts, versioning, backward compatibility
-- `/prompts:security-reviewer`: Vulnerabilities, trust boundaries, authn/authz
 - `/prompts:performance-reviewer`: Hotspots, complexity, memory/latency optimization
-- `/prompts:code-reviewer`: Comprehensive review across all concerns
+- `/prompts:code-reviewer`: Comprehensive review across quality, API, and security concerns
 
 Domain Specialists:
 - `/prompts:dependency-expert`: External SDK/API/package evaluation
@@ -184,7 +183,7 @@ Do not ask for confirmation — just read the skill file and follow its instruct
 | "tdd", "test first" | `$tdd` | Read `~/.agents/skills/tdd/SKILL.md`, start test-driven workflow |
 | "fix build", "type errors" | `$build-fix` | Read `~/.agents/skills/build-fix/SKILL.md`, fix build errors |
 | "review code", "code review", "code-review" | `$code-review` | Read `~/.agents/skills/code-review/SKILL.md`, run code review |
-| "security review" | `$security-review` | Read `~/.agents/skills/security-review/SKILL.md`, run security audit |
+| "security review" | `$code-review` | Read `~/.agents/skills/code-review/SKILL.md`, run a security-focused review via the canonical review surface |
 | "web-clone", "clone site", "clone website", "copy webpage" | `$web-clone` | Read `~/.agents/skills/web-clone/SKILL.md`, start website cloning pipeline |
 
 Detection rules:
@@ -226,8 +225,7 @@ Agent Shortcuts:
 - `deepsearch` -> explore: Thorough codebase search
 - `tdd` -> test-engineer: Test-driven development workflow
 - `build-fix` -> build-fixer: Build error resolution
-- `code-review` -> code-reviewer: Comprehensive code review
-- `security-review` -> security-reviewer: Security audit
+- `code-review` -> code-reviewer: Comprehensive code review, including security-focused review
 - `frontend-ui-ux` -> designer: UI component and styling work
 - `git-master` -> git-master: Git commit and history management
 
@@ -252,7 +250,7 @@ Bug Investigation:
   explore + debugger + executor + test-engineer + verifier
 
 Code Review:
-  style-reviewer + quality-reviewer + api-reviewer + security-reviewer
+  style-reviewer + quality-reviewer + api-reviewer + code-reviewer
 
 Product Discovery:
   product-manager + ux-researcher + product-analyst + designer

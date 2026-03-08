@@ -41,7 +41,7 @@ command = "node"
 `.trimStart(),
       );
 
-      const res = runOmx(wd, ['doctor'], { HOME: home });
+      const res = runOmx(wd, ['doctor'], { HOME: home, CODEX_HOME: codexDir });
       if (shouldSkipForSpawnPermissions(res.error)) return;
       assert.equal(res.status, 0, res.stderr || res.stdout);
       assert.match(

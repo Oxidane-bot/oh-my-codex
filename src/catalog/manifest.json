@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "catalogVersion": "2026.02.28.1",
+  "catalogVersion": "2026.03.08.1",
   "skills": [
     {
       "name": "autopilot",
@@ -99,8 +99,8 @@
     {
       "name": "security-review",
       "category": "shortcut",
-      "status": "active",
-      "canonical": "security-reviewer"
+      "status": "merged",
+      "canonical": "code-review"
     },
     {
       "name": "visual-verdict",
@@ -291,7 +291,8 @@
     {
       "name": "security-reviewer",
       "category": "review",
-      "status": "active"
+      "status": "merged",
+      "canonical": "code-reviewer"
     },
     {
       "name": "performance-reviewer",

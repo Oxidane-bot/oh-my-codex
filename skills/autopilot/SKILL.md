@@ -80,8 +80,7 @@ Most non-trivial software tasks require coordinated phases: understanding requir
 
 5. **Phase 4 - Validation**: Multi-perspective review in parallel
    - Architect: Functional completeness
-   - Security-reviewer: Vulnerability check
-   - Code-reviewer: Quality review
+   - Code-reviewer: Comprehensive review, including the security review lane
    - All must approve; fix and re-validate on rejection
 
 6. **Phase 5 - Cleanup**: Clear all mode state via OMX MCP tools on successful completion
@@ -95,8 +94,7 @@ Most non-trivial software tasks require coordinated phases: understanding requir
 <Tool_Usage>
 - Before first MCP tool use, call `ToolSearch("mcp")` to discover deferred MCP tools
 - Use `ask_codex` with `agent_role: "architect"` for Phase 4 architecture validation
-- Use `ask_codex` with `agent_role: "security-reviewer"` for Phase 4 security review
-- Use `ask_codex` with `agent_role: "code-reviewer"` for Phase 4 quality review
+- Use `ask_codex` with `agent_role: "code-reviewer"` for Phase 4 comprehensive review, including security-focused validation
 - Agents form their own analysis first, then consult Codex for cross-validation
 - If ToolSearch finds no MCP tools or Codex is unavailable, proceed without it -- never block on external tools
 </Tool_Usage>

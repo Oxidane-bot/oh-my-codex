@@ -2,163 +2,103 @@
 name: ralplan
 description: Alias for $plan --consensus
 ---
+<skill>
+<identity>
+Ralplan is the canonical consensus-planning entry point.
+It is a compatibility-friendly alias over `$plan --consensus`, preserving the branded RALPLAN-DR workflow while keeping planning behavior centralized under `plan`.
+</identity>
 
-# Ralplan (Consensus Planning Alias)
+<when_to_use>
+- Use when the user wants consensus planning before execution
+- Use when architecture, tradeoffs, or risky migrations need Planner + Architect + Critic alignment
+- Use when a deep-interview spec exists and should be refined into an execution-ready plan
+</when_to_use>
 
-Ralplan is a shorthand alias for `$plan --consensus`. It triggers iterative planning with Planner, Architect, and Critic agents until consensus is reached, with **RALPLAN-DR structured deliberation** (short mode by default, deliberate mode for high-risk work).
+<flags>
+- `--interactive`: pause at review/approval checkpoints for user input
+- `--deliberate`: force higher-rigor planning with pre-mortem and expanded test planning for high-risk work
+</flags>
 
-## Usage
-
-```
-$ralplan "task description"
-```
-
-## Flags
-
-- `--interactive`: Enables user prompts at key decision points (draft review in step 2 and final approval in step 6). Without this flag the workflow runs fully automated — Planner → Architect → Critic loop — and outputs the final plan without asking for confirmation.
-- `--deliberate`: Forces deliberate mode for high-risk work. Adds pre-mortem (3 scenarios) and expanded test planning (unit/integration/e2e/observability). Without this flag, deliberate mode can still auto-enable when the request explicitly signals high risk (auth/security, migrations, destructive changes, production incidents, compliance/PII, public API breakage).
-
-## Usage with interactive mode
-
-```
-$ralplan --interactive "task description"
-```
-
-## Behavior
-
-## GPT-5.4 Guidance Alignment
-
+<workflow>
+<gpt54_guidance>
 - Default to concise, evidence-dense progress and completion reporting unless the user or risk level requires more detail.
 - Treat newer user task updates as local overrides for the active workflow branch while preserving earlier non-conflicting constraints.
 - If correctness depends on additional inspection, retrieval, execution, or verification, keep using the relevant tools until the consensus-planning flow is grounded.
 - Continue through clear, low-risk, reversible next steps automatically; ask only when the next step is materially branching, destructive, or preference-dependent.
+</gpt54_guidance>
 
+<compatibility_contract>
+- `ralplan` remains a first-class branded workflow shell even though it delegates to the canonical `plan` skill in consensus mode.
+- Preserve the distinct RALPLAN-DR framing: principles, drivers, options, architect challenge, and critic gate.
+- Never implement directly from ralplan; execution handoff remains downstream to `ralph` or `team`.
+</compatibility_contract>
+
+<invocation>
 This skill invokes the Plan skill in consensus mode:
 
-```
+```bash
 $plan --consensus <arguments>
 $plan --consensus --interactive <arguments>
+$plan --consensus --deliberate <arguments>
 ```
+</invocation>
 
-The consensus workflow:
-1. **Planner** creates initial plan and a compact **RALPLAN-DR summary** before review:
-   - Principles (3-5)
-   - Decision Drivers (top 3)
-   - Viable Options (>=2) with bounded pros/cons
-   - If only one viable option remains, explicit invalidation rationale for alternatives
-   - Deliberate mode only: pre-mortem (3 scenarios) + expanded test plan (unit/integration/e2e/observability)
-2. **User feedback** *(--interactive only)*: If `--interactive` is set, use `AskUserQuestion` to present the draft plan **plus the Principles / Drivers / Options summary** before review (Proceed to review / Request changes / Skip review). Otherwise, automatically proceed to review.
-3. **Architect** reviews for architectural soundness and must provide the strongest steelman antithesis, at least one real tradeoff tension, and (when possible) synthesis — **await completion before step 4**. In deliberate mode, Architect should explicitly flag principle violations.
-4. **Critic** evaluates against quality criteria — run only after step 3 completes. Critic must enforce principle-option consistency, fair alternatives, risk mitigation clarity, testable acceptance criteria, and concrete verification steps. In deliberate mode, Critic must reject missing/weak pre-mortem or expanded test plan.
-5. **Re-review loop** (max 5 iterations): Any non-`APPROVE` Critic verdict (`ITERATE` or `REJECT`) MUST run the same full closed loop:
-   a. Collect Architect + Critic feedback
-   b. Revise the plan with Planner
-   c. Return to Architect review
-   d. Return to Critic evaluation
-   e. Repeat this loop until Critic returns `APPROVE` or 5 iterations are reached
-   f. If 5 iterations are reached without `APPROVE`, present the best version to the user
-6. On Critic approval *(--interactive only)*: If `--interactive` is set, use `AskUserQuestion` to present the plan with approval options (Approve and execute via ralph / Approve and implement via team / Request changes / Reject). Final plan must include ADR (Decision, Drivers, Alternatives considered, Why chosen, Consequences, Follow-ups). Otherwise, output the final plan and stop.
-7. *(--interactive only)* User chooses: Approve (ralph or team), Request changes, or Reject
-8. *(--interactive only)* On approval: invoke `$ralph` for sequential execution or `$team` for parallel team execution -- never implement directly
+<consensus_flow>
+1. **Planner** drafts the plan and emits a compact RALPLAN-DR summary.
+2. **User feedback** happens only in `--interactive` mode.
+3. **Architect** reviews the plan and must provide a steelman antithesis plus tradeoff tension.
+4. **Critic** evaluates principle-option consistency, risks, and verification quality.
+5. **Re-review loop** repeats until approval or iteration cap.
+6. **Execution handoff** routes to `ralph` or `team` only after approval.
 
-> **Important:** Steps 3 and 4 MUST run sequentially. Do NOT issue both agent calls in the same parallel batch. Always await the Architect result before invoking Critic.
+> **Important:** Architect and Critic must run sequentially, never in the same parallel batch.
+</consensus_flow>
 
-Follow the Plan skill's full documentation for consensus mode details.
-
+<pre_context_gate>
 ## Pre-context Intake
 
-Before consensus planning or execution handoff, ensure a grounded context snapshot exists:
+Before consensus planning or execution handoff, ensure a grounded context snapshot exists under `.omx/context/`.
+- Reuse the latest relevant snapshot in `.omx/context/{slug}-*.md` when available.
+- If none exists, create `.omx/context/{slug}-{timestamp}.md` (UTC `YYYYMMDDTHHMMSSZ`) with task statement, desired outcome, known facts/evidence, constraints, unknowns/open questions, and likely codebase touchpoints.
+If ambiguity remains high, run `explore` and then `$deep-interview --quick <task>` before continuing.
+</pre_context_gate>
 
-1. Derive a task slug from the request.
-2. Reuse the latest relevant snapshot in `.omx/context/{slug}-*.md` when available.
-3. If none exists, create `.omx/context/{slug}-{timestamp}.md` (UTC `YYYYMMDDTHHMMSSZ`) with:
-   - task statement
-   - desired outcome
-   - known facts/evidence
-   - constraints
-   - unknowns/open questions
-   - likely codebase touchpoints
-4. If ambiguity remains high, run `explore` first for brownfield facts, then run `$deep-interview --quick <task>` before continuing.
+<ralplan_first_gate>
+Execution modes such as `ralph`, `autopilot`, `team`, and `ultrawork` should not launch on underspecified work when the ralplan gate applies.
+Ralplan exists to turn vague execution requests into explicit, testable plans before heavy orchestration starts.
+</ralplan_first_gate>
 
-Do not hand off to execution modes until this intake is complete; if urgency forces progress, explicitly document the risk tradeoffs.
-
+<pre_execution_gate>
 ## Pre-Execution Gate
 
-### Why the Gate Exists
+Execution modes (`ralph`, `autopilot`, `team`, `ultrawork`) should not launch on underspecified work when the ralplan gate applies.
 
-Execution modes (ralph, autopilot, team, ultrawork) spin up heavy multi-agent orchestration. When launched on a vague request like "ralph improve the app", agents have no clear target — they waste cycles on scope discovery that should happen during planning, often delivering partial or misaligned work that requires rework.
+Bypass prefixes are supported when the user explicitly wants to override the gate:
+- `force:`
+- `! `
 
-The ralplan-first gate intercepts underspecified execution requests and redirects them through the ralplan consensus planning workflow. This ensures:
-- **Explicit scope**: A PRD defines exactly what will be built
-- **Test specification**: Acceptance criteria are testable before code is written
-- **Consensus**: Planner, Architect, and Critic agree on the approach
-- **No wasted execution**: Agents start with a clear, bounded task
+The final approved plan must include ADR fields: **Decision**, **Drivers**, **Alternatives considered**, **Why chosen**, **Consequences**, and **Follow-ups**.
 
-### Good vs Bad Prompts
+Important: steps 3 and 4 MUST run sequentially. Do NOT run Architect and Critic in parallel; always await completion before step 4.
+</pre_execution_gate>
+</workflow>
 
-**Passes the gate** (specific enough for direct execution):
-- `ralph fix the null check in src/hooks/bridge.ts:326`
-- `autopilot implement issue #42`
-- `team add validation to function processKeywordDetector`
-- `ralph do:\n1. Add input validation\n2. Write tests\n3. Update README`
-- `ultrawork add the user model in src/models/user.ts`
+<style>
+<output_contract>
+Default final-output shape: concise and evidence-dense unless the user asks for more detail.
 
-**Gated — redirected to ralplan** (needs scoping first):
-- `ralph fix this`
-- `autopilot build the app`
-- `team improve performance`
-- `ralph add authentication`
-- `ultrawork make it better`
+- Plan path
+- RALPLAN-DR summary
+- Approval/review status
+- Next-step handoff (`$ralph` / `$team`) when appropriate
+</output_contract>
 
-**Bypass the gate** (when you know what you want):
-- `force: ralph refactor the auth module`
-- `! autopilot optimize everything`
-
-### When the Gate Does NOT Trigger
-
-The gate auto-passes when it detects **any** concrete signal. You do not need all of them — one is enough:
-
-| Signal Type | Example prompt | Why it passes |
-|---|---|---|
-| File path | `ralph fix src/hooks/bridge.ts` | References a specific file |
-| Issue/PR number | `ralph implement #42` | Has a concrete work item |
-| camelCase symbol | `ralph fix processKeywordDetector` | Names a specific function |
-| PascalCase symbol | `ralph update UserModel` | Names a specific class |
-| snake_case symbol | `team fix user_model` | Names a specific identifier |
-| Test runner | `ralph npm test && fix failures` | Has an explicit test target |
-| Numbered steps | `ralph do:\n1. Add X\n2. Test Y` | Structured deliverables |
-| Acceptance criteria | `ralph add login - acceptance criteria: ...` | Explicit success definition |
-| Error reference | `ralph fix TypeError in auth` | Specific error to address |
-| Code block | `ralph add: \`\`\`ts ... \`\`\`` | Concrete code provided |
-| Escape prefix | `force: ralph do it` or `! ralph do it` | Explicit user override |
-
-### End-to-End Flow Example
-
-1. User types: `ralph add user authentication`
-2. Gate detects: execution keyword (`ralph`) + underspecified prompt (no files, functions, or test spec)
-3. Gate redirects to **ralplan** with message explaining the redirect
-4. Ralplan consensus runs:
-   - **Planner** creates initial plan (which files, what auth method, what tests)
-   - **Architect** reviews for soundness
-   - **Critic** validates quality and testability
-5. On consensus approval, user chooses execution path:
-   - **ralph**: sequential execution with verification
-   - **team**: parallel coordinated agents
-6. Execution begins with a clear, bounded plan
-
-### Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| Gate fires on a well-specified prompt | Add a file reference, function name, or issue number to anchor the request |
-| Want to bypass the gate | Prefix with `force:` or `!` (e.g., `force: ralph fix it`) |
-| Gate does not fire on a vague prompt | The gate only catches prompts with <=15 effective words and no concrete anchors; add more detail or use `$ralplan` explicitly |
-| Redirected to ralplan but want to skip planning | In the ralplan workflow, say "just do it" or "skip planning" to transition directly to execution |
-
-## Scenario Examples
-
-**Good:** The user says `continue` after the workflow already has a clear next step. Continue the current branch of work instead of restarting or re-asking the same question.
+<scenario_examples>
+**Good:** The user says `continue` after the next safe planning step is already known. Continue the current branch of work instead of restarting discovery.
 
 **Good:** The user changes only the output shape or downstream delivery step (for example `make a PR`). Preserve earlier non-conflicting workflow constraints and apply the update locally.
 
 **Bad:** The user says `continue`, and the workflow restarts discovery or stops before the missing verification/evidence is gathered.
+</scenario_examples>
+</style>
+</skill>

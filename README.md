@@ -377,7 +377,7 @@ Notes:
 - Skills: `skills/*/SKILL.md` (installed to `~/.agents/skills/` for `user`, `./.agents/skills/` for `project`)
 
 Examples:
-- Agents: `architect`, `planner`, `executor`, `debugger`, `verifier`, `security-reviewer`
+- Agents: `architect`, `planner`, `executor`, `debugger`, `verifier`, `code-reviewer`
 - Skills: `autopilot`, `plan`, `team`, `ralph`, `ultrawork`, `cancel`
 
 ### Notification Setup Skill (`$configure-notifications`)

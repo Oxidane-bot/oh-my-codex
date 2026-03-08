@@ -2,13 +2,14 @@
 name: security-review
 description: Run a comprehensive security review on code
 ---
-
-# Security Review Skill
-
+<skill>
+<identity>
+Security Review is a compatibility entry point under the canonical `code-review` / `code-reviewer` system.
 Conduct a thorough security audit checking for OWASP Top 10 vulnerabilities, hardcoded secrets, and unsafe patterns.
+This surface remains available for users who want explicit security emphasis, while the broader code-review surface now owns the merged review behavior.
+</identity>
 
-## When to Use
-
+<when_to_use>
 This skill activates when:
 - User requests "security review", "security audit"
 - After writing code that handles user input
@@ -16,18 +17,28 @@ This skill activates when:
 - After modifying authentication/authorization logic
 - Before deploying to production
 - After adding external dependencies
+</when_to_use>
 
-## What It Does
-
+<workflow>
+<gpt54_guidance>
 ## GPT-5.4 Guidance Alignment
 
 - Default to concise, evidence-dense progress and completion reporting unless the user or risk level requires more detail.
 - Treat newer user task updates as local overrides for the active workflow branch while preserving earlier non-conflicting constraints.
 - If correctness depends on additional inspection, retrieval, execution, or verification, keep using the relevant tools until the security review is grounded.
 - Continue through clear, low-risk, reversible next steps automatically; ask only when the next step is materially branching, destructive, or preference-dependent.
+</gpt54_guidance>
 
-Delegates to the `security-reviewer` agent (THOROUGH tier) for deep security analysis:
+<compatibility_contract>
+- The canonical comprehensive review surface is `code-review` / `code-reviewer`.
+- `security-review` remains as a focused compatibility surface for security-first requests.
+- Preserve security-specific depth; do not downgrade OWASP, secrets, auth/authz, or dependency guidance during the consolidation.
+</compatibility_contract>
 
+<what_it_does>
+Delegates to the `security-reviewer` agent (THOROUGH tier) as the security-focused compatibility facade over the merged review system.
+
+<security_areas>
 1. **OWASP Top 10 Scan**
    - A01: Broken Access Control
    - A02: Cryptographic Failures
@@ -64,7 +75,10 @@ Delegates to the `security-reviewer` agent (THOROUGH tier) for deep security ana
    - Run `npm audit` for known vulnerabilities
    - Check for outdated dependencies
    - Identify high-severity CVEs
+</security_areas>
+</what_it_does>
 
+<agent_delegation>
 ## Agent Delegation
 
 ```
@@ -74,6 +88,7 @@ delegate(
   prompt="SECURITY REVIEW TASK
 
 Conduct comprehensive security audit of codebase.
+This is a compatibility entry point under the canonical code-reviewer review system.
 
 Scope: [specific files or entire codebase]
 
@@ -92,7 +107,9 @@ Output: Security review report with:
 - Overall security posture assessment"
 )
 ```
+</agent_delegation>
 
+<external_model_consultation>
 ## External Model Consultation (Preferred)
 
 The security-reviewer agent SHOULD consult Codex for cross-validation.
@@ -122,7 +139,11 @@ Use `mcp__x__ask_codex` with `agent_role: "security-reviewer"`.
 If ToolSearch finds no MCP tools, fall back to the `security-reviewer` agent.
 
 **Note:** Security second opinions are high-value. Consider consulting for CRITICAL/HIGH findings.
+</external_model_consultation>
+</workflow>
 
+<style>
+<output_format>
 ## Output Format
 
 ```
@@ -131,6 +152,7 @@ SECURITY REVIEW REPORT
 
 Scope: Entire codebase (42 files scanned)
 Scan Date: 2026-01-24T14:30:00Z
+Surface: compatibility facade over canonical code-reviewer
 
 CRITICAL (2)
 ------------
@@ -202,7 +224,9 @@ Immediate Actions Required:
 
 Recommendation: DO NOT DEPLOY until CRITICAL and HIGH issues resolved.
 ```
+</output_format>
 
+<security_checklist>
 ## Security Checklist
 
 The security-reviewer agent verifies:
@@ -245,14 +269,18 @@ The security-reviewer agent verifies:
 - [ ] Dependencies up to date
 - [ ] No CRITICAL or HIGH CVEs
 - [ ] Dependency sources verified
+</security_checklist>
 
+<severity_definitions>
 ## Severity Definitions
 
 **CRITICAL** - Exploitable vulnerability with severe impact (data breach, RCE, credential theft)
 **HIGH** - Vulnerability requiring specific conditions but serious impact
 **MEDIUM** - Security weakness with limited impact or difficult exploitation
 **LOW** - Best practice violation or minor security concern
+</severity_definitions>
 
+<remediation_priority>
 ## Remediation Priority
 
 1. **Rotate exposed secrets** - Immediate (within 1 hour)
@@ -260,8 +288,9 @@ The security-reviewer agent verifies:
 3. **Fix HIGH** - Important (within 1 week)
 4. **Fix MEDIUM** - Planned (within 1 month)
 5. **Fix LOW** - Backlog (when convenient)
+</remediation_priority>
 
-
+<scenario_examples>
 ## Scenario Examples
 
 **Good:** The user says `continue` after the workflow already has a clear next step. Continue the current branch of work instead of restarting or re-asking the same question.
@@ -269,7 +298,9 @@ The security-reviewer agent verifies:
 **Good:** The user changes only the output shape or downstream delivery step (for example `make a PR`). Preserve earlier non-conflicting workflow constraints and apply the update locally.
 
 **Bad:** The user says `continue`, and the workflow restarts discovery or stops before the missing verification/evidence is gathered.
+</scenario_examples>
 
+<use_with_other_skills>
 ## Use with Other Skills
 
 **With Team:**
@@ -289,7 +320,9 @@ Parallel security review across multiple endpoints.
 /ralph security-review then fix all issues
 ```
 Review, fix, re-review until all issues resolved.
+</use_with_other_skills>
 
+<best_practices>
 ## Best Practices
 
 - **Review early** - Security by design, not afterthought
@@ -298,3 +331,6 @@ Review, fix, re-review until all issues resolved.
 - **Fix immediately** - Don't accumulate security debt
 - **Educate** - Learn from findings to prevent future issues
 - **Verify fixes** - Re-run security review after remediation
+</best_practices>
+</style>
+</skill>
