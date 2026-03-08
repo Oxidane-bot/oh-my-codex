@@ -41,6 +41,7 @@ import {
   teamNormalizePolicy as normalizeTeamPolicy,
   teamClaimTask as claimTask,
   teamReleaseTaskClaim as releaseTaskClaim,
+  teamReclaimExpiredTaskClaim as reclaimExpiredTaskClaim,
   teamAppendEvent as appendTeamEvent,
   teamReadTaskApproval as readTaskApproval,
   teamListMailbox as listMailboxMessages,
@@ -948,9 +949,18 @@ export async function monitorTeam(teamName: string, cwd: string): Promise<TeamSn
   const listTasksStartMs = performance.now();
   const allTasks = await listTasks(sanitized, cwd);
   const listTasksMs = performance.now() - listTasksStartMs;
-  const taskById = new Map(allTasks.map((task) => [task.id, task] as const));
-  const inProgressByOwner = new Map<string, TeamTask[]>();
+
+  const reclaimedTaskIds: string[] = [];
   for (const task of allTasks) {
+    if (task.status !== 'in_progress' || !task.claim?.leased_until) continue;
+    if (new Date(task.claim.leased_until) > new Date()) continue;
+    const reclaimed = await reclaimExpiredTaskClaim(sanitized, task.id, cwd);
+    if (reclaimed.ok && reclaimed.reclaimed) reclaimedTaskIds.push(task.id);
+  }
+  const taskView = reclaimedTaskIds.length > 0 ? await listTasks(sanitized, cwd) : allTasks;
+  const taskById = new Map(taskView.map((task) => [task.id, task] as const));
+  const inProgressByOwner = new Map<string, TeamTask[]>();
+  for (const task of taskView) {
     if (task.status !== 'in_progress' || !task.owner) continue;
     const existing = inProgressByOwner.get(task.owner) || [];
     existing.push(task);
@@ -1019,15 +1029,15 @@ export async function monitorTeam(teamName: string, cwd: string): Promise<TeamSn
 
   // Count tasks
   const taskCounts = {
-    total: allTasks.length,
-    pending: allTasks.filter(t => t.status === 'pending').length,
-    blocked: allTasks.filter(t => t.status === 'blocked').length,
-    in_progress: allTasks.filter(t => t.status === 'in_progress').length,
-    completed: allTasks.filter(t => t.status === 'completed').length,
-    failed: allTasks.filter(t => t.status === 'failed').length,
+    total: taskView.length,
+    pending: taskView.filter(t => t.status === 'pending').length,
+    blocked: taskView.filter(t => t.status === 'blocked').length,
+    in_progress: taskView.filter(t => t.status === 'in_progress').length,
+    completed: taskView.filter(t => t.status === 'completed').length,
+    failed: taskView.filter(t => t.status === 'failed').length,
   };
 
-  const verificationPendingTasks = allTasks.filter(
+  const verificationPendingTasks = taskView.filter(
     (task) => task.status === 'completed'
       && task.requires_code_change === true
       && !hasStructuredVerificationEvidence(task.result),
@@ -1048,7 +1058,11 @@ export async function monitorTeam(teamName: string, cwd: string): Promise<TeamSn
   await writeTeamPhaseState(sanitized, phaseState, cwd);
   const phase: TeamPhase | TerminalPhase = phaseState.current_phase;
 
-  await emitMonitorDerivedEvents(sanitized, allTasks, workers, previousSnapshot, cwd);
+  for (const taskId of reclaimedTaskIds) {
+    recommendations.push(`Reclaimed expired claim for task-${taskId}`);
+  }
+
+  await emitMonitorDerivedEvents(sanitized, taskView, workers, previousSnapshot, cwd);
   const mailboxDeliveryStartMs = performance.now();
   const mailboxNotifiedByMessageId = await deliverPendingMailboxMessages(
     sanitized,
@@ -1081,7 +1095,7 @@ export async function monitorTeam(teamName: string, cwd: string): Promise<TeamSn
   await writeMonitorSnapshot(
     sanitized,
       {
-        taskStatusById: Object.fromEntries(allTasks.map((t) => [t.id, t.status])),
+        taskStatusById: Object.fromEntries(taskView.map((t) => [t.id, t.status])),
         workerAliveByName: Object.fromEntries(workers.map((w) => [w.name, w.alive])),
         workerStateByName: Object.fromEntries(workers.map((w) => [w.name, w.status.state])),
         workerTurnCountByName: Object.fromEntries(workers.map((w) => [w.name, w.heartbeat?.turn_count ?? 0])),
@@ -1105,7 +1119,7 @@ export async function monitorTeam(teamName: string, cwd: string): Promise<TeamSn
     workers,
     tasks: {
       ...taskCounts,
-      items: allTasks,
+      items: taskView,
     },
     allTasksTerminal,
     deadWorkers,

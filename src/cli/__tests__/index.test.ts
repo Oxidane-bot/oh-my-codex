@@ -31,7 +31,11 @@ import {
   buildNotifyTempStartupMessages,
 } from '../index.js';
 import { HUD_TMUX_HEIGHT_LINES } from '../../hud/constants.js';
-import { DEFAULT_FRONTIER_MODEL } from '../../config/models.js';
+import { DEFAULT_FRONTIER_MODEL, getTeamLowComplexityModel } from '../../config/models.js';
+
+function expectedLowComplexityModel(codexHomeOverride?: string): string {
+  return getTeamLowComplexityModel(codexHomeOverride);
+}
 
 describe('normalizeCodexLaunchArgs', () => {
   it('maps --madmax to codex bypass flag', () => {
@@ -230,11 +234,11 @@ describe('buildNotifyTempStartupMessages', () => {
 
 describe('resolveWorkerSparkModel', () => {
   it('returns spark model string when --spark is present', () => {
-    assert.equal(resolveWorkerSparkModel(['--spark', '--yolo']), 'gpt-5.3-codex-spark');
+    assert.equal(resolveWorkerSparkModel(['--spark', '--yolo']), expectedLowComplexityModel());
   });
 
   it('returns spark model string when --madmax-spark is present', () => {
-    assert.equal(resolveWorkerSparkModel(['--madmax-spark']), 'gpt-5.3-codex-spark');
+    assert.equal(resolveWorkerSparkModel(['--madmax-spark']), expectedLowComplexityModel());
   });
 
   it('returns undefined when neither spark flag is present', () => {
@@ -262,21 +266,21 @@ describe('resolveWorkerSparkModel', () => {
 describe('resolveTeamWorkerLaunchArgsEnv (spark)', () => {
   it('injects spark model as worker default when no explicit env model', () => {
     assert.equal(
-      resolveTeamWorkerLaunchArgsEnv(undefined, [], true, 'gpt-5.3-codex-spark'),
-      '--model gpt-5.3-codex-spark'
+      resolveTeamWorkerLaunchArgsEnv(undefined, [], true, expectedLowComplexityModel()),
+      `--model ${expectedLowComplexityModel()}`
     );
   });
 
   it('explicit env model overrides spark default', () => {
     assert.equal(
-      resolveTeamWorkerLaunchArgsEnv('--model gpt-5', [], true, 'gpt-5.3-codex-spark'),
+      resolveTeamWorkerLaunchArgsEnv('--model gpt-5', [], true, expectedLowComplexityModel()),
       '--model gpt-5'
     );
   });
 
   it('inherited leader model overrides spark default', () => {
     assert.equal(
-      resolveTeamWorkerLaunchArgsEnv(undefined, ['--model', 'gpt-4.1'], true, 'gpt-5.3-codex-spark'),
+      resolveTeamWorkerLaunchArgsEnv(undefined, ['--model', 'gpt-4.1'], true, expectedLowComplexityModel()),
       '--model gpt-4.1'
     );
   });

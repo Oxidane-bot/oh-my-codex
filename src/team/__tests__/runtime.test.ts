@@ -31,7 +31,12 @@ import {
   TEAM_LOW_COMPLEXITY_DEFAULT_MODEL,
   type TeamRuntime,
 } from '../runtime.js';
+import { resolveTeamLowComplexityDefaultModel } from '../model-contract.js';
 
+
+function expectedLowComplexityModel(codexHomeOverride?: string): string {
+  return resolveTeamLowComplexityDefaultModel(codexHomeOverride);
+}
 function withEmptyPath<T>(fn: () => T): T {
   const prev = process.env.PATH;
   process.env.PATH = '';
@@ -59,7 +64,7 @@ describe('runtime', () => {
       { OMX_TEAM_WORKER_LAUNCH_ARGS: '--no-alt-screen' },
       'explore',
     );
-    assert.deepEqual(args, ['--no-alt-screen', '--model', TEAM_LOW_COMPLEXITY_DEFAULT_MODEL]);
+    assert.deepEqual(args, ['--no-alt-screen', '--model', expectedLowComplexityModel()]);
   });
 
   it('resolveWorkerLaunchArgsFromEnv reads low-complexity model from config when present', async () => {
@@ -96,7 +101,7 @@ describe('runtime', () => {
       { OMX_TEAM_WORKER_LAUNCH_ARGS: '--no-alt-screen' },
       'executor-low',
     );
-    assert.deepEqual(args, ['--no-alt-screen', '--model', TEAM_LOW_COMPLEXITY_DEFAULT_MODEL]);
+    assert.deepEqual(args, ['--no-alt-screen', '--model', expectedLowComplexityModel()]);
   });
 
   it('resolveWorkerLaunchArgsFromEnv preserves explicit model in either syntax', () => {
@@ -146,7 +151,7 @@ describe('runtime', () => {
       );
       assert.deepEqual(
         args,
-        ['--no-alt-screen', '-c', 'model_reasoning_effort="high"', '--model', TEAM_LOW_COMPLEXITY_DEFAULT_MODEL],
+        ['--no-alt-screen', '-c', 'model_reasoning_effort="high"', '--model', expectedLowComplexityModel()],
       );
     } finally {
       console.log = originalLog;
@@ -168,7 +173,7 @@ describe('runtime', () => {
       );
       assert.deepEqual(
         args,
-        ['--no-alt-screen', '-c', 'model_reasoning_effort="high"', '--model', TEAM_LOW_COMPLEXITY_DEFAULT_MODEL],
+        ['--no-alt-screen', '-c', 'model_reasoning_effort="high"', '--model', expectedLowComplexityModel()],
       );
     } finally {
       console.log = originalLog;
@@ -231,7 +236,7 @@ describe('runtime', () => {
         { OMX_TEAM_WORKER_LAUNCH_ARGS: '--no-alt-screen' },
         'explore',
       );
-      assert.deepEqual(args, ['--no-alt-screen', '--model', TEAM_LOW_COMPLEXITY_DEFAULT_MODEL]);
+      assert.deepEqual(args, ['--no-alt-screen', '--model', expectedLowComplexityModel()]);
     } finally {
       console.log = originalLog;
     }
@@ -546,6 +551,31 @@ process.on('SIGTERM', () => {
       const reassignHint = snapshot?.recommendations.some((r) => r.includes(`task-${t2.id}`));
       assert.equal(typeof reassignHint, 'boolean');
       void t1;
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('monitorTeam reclaims expired task claims and surfaces the recovery in recommendations', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'omx-runtime-reclaim-'));
+    try {
+      await initTeamState('team-runtime-reclaim', 'reclaim test', 'executor', 2, cwd);
+      const t = await createTask('team-runtime-reclaim', { subject: 'task', description: 'd', status: 'pending' }, cwd);
+      const claim = await claimTask('team-runtime-reclaim', t.id, 'worker-1', null, cwd);
+      assert.ok(claim.ok);
+      if (!claim.ok) throw new Error('claim failed');
+
+      const taskPath = join(cwd, '.omx', 'state', 'team', 'team-runtime-reclaim', 'tasks', `task-${t.id}.json`);
+      const current = JSON.parse(await readFile(taskPath, 'utf-8')) as any;
+      current.claim.leased_until = new Date(Date.now() - 1000).toISOString();
+      await writeAtomic(taskPath, JSON.stringify(current, null, 2));
+
+      const snapshot = await monitorTeam('team-runtime-reclaim', cwd);
+      assert.ok(snapshot);
+      const reread = await readTask('team-runtime-reclaim', t.id, cwd);
+      assert.equal(reread?.status, 'pending');
+      assert.equal(reread?.claim, undefined);
+      assert.equal(snapshot?.recommendations.some((r) => r.includes(`task-${t.id}`) && r.includes('Reclaimed expired claim')), true);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

@@ -9,6 +9,7 @@ import {
   claimTask as claimTaskImpl,
   transitionTaskStatus as transitionTaskStatusImpl,
   releaseTaskClaim as releaseTaskClaimImpl,
+  reclaimExpiredTaskClaim as reclaimExpiredTaskClaimImpl,
   listTasks as listTasksImpl,
 } from './state/tasks.js';
 import {
@@ -301,6 +302,10 @@ export type TransitionTaskResult =
 export type ReleaseTaskClaimResult =
   | { ok: true; task: TeamTaskV2 }
   | { ok: false; error: 'claim_conflict' | 'task_not_found' | 'already_terminal' | 'lease_expired' };
+
+export type ReclaimTaskResult =
+  | { ok: true; task: TeamTaskV2; reclaimed: boolean }
+  | { ok: false; error: 'claim_conflict' | 'task_not_found' | 'already_terminal' | 'lease_active' };
 
 export interface TeamSummary {
   teamName: string;
@@ -1258,6 +1263,24 @@ export async function releaseTaskClaim(
   cwd: string
 ): Promise<ReleaseTaskClaimResult> {
   return await releaseTaskClaimImpl(taskId, claimToken, workerName, {
+    teamName,
+    cwd,
+    readTask,
+    readTeamConfig,
+    withTaskClaimLock,
+    normalizeTask,
+    isTerminalTaskStatus,
+    taskFilePath,
+    writeAtomic,
+  });
+}
+
+export async function reclaimExpiredTaskClaim(
+  teamName: string,
+  taskId: string,
+  cwd: string
+): Promise<ReclaimTaskResult> {
+  return await reclaimExpiredTaskClaimImpl(taskId, {
     teamName,
     cwd,
     readTask,

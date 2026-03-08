@@ -20,6 +20,7 @@ import {
   readTeamManifestV2,
   transitionTaskStatus,
   releaseTaskClaim,
+  reclaimExpiredTaskClaim,
   sendDirectMessage,
   broadcastMessage,
   markMessageDelivered,
@@ -766,6 +767,35 @@ describe('team state', () => {
       const result = await releaseTaskClaim('team-lease-release-owner', t.id, claim.claimToken, 'worker-1', cwd);
       assert.equal(result.ok, false);
       assert.equal(result.ok ? 'x' : result.error, 'lease_expired');
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+
+  it('reclaimExpiredTaskClaim reopens an expired in-progress task so another worker can claim it', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'omx-team-reclaim-expired-'));
+    try {
+      await initTeamState('team-reclaim-expired', 't', 'executor', 2, cwd);
+      const t = await createTask('team-reclaim-expired', { subject: 'a', description: 'd', status: 'pending' }, cwd);
+      const claim = await claimTask('team-reclaim-expired', t.id, 'worker-1', t.version ?? 1, cwd);
+      assert.equal(claim.ok, true);
+      if (!claim.ok) return;
+
+      const taskPath = join(cwd, '.omx', 'state', 'team', 'team-reclaim-expired', 'tasks', `task-${t.id}.json`);
+      const current = JSON.parse(await readFile(taskPath, 'utf-8')) as any;
+      current.claim.leased_until = new Date(Date.now() - 1000).toISOString();
+      await writeFile(taskPath, JSON.stringify(current, null, 2));
+
+      const reclaimed = await reclaimExpiredTaskClaim('team-reclaim-expired', t.id, cwd);
+      assert.equal(reclaimed.ok, true);
+      if (!reclaimed.ok) return;
+      assert.equal(reclaimed.reclaimed, true);
+      assert.equal(reclaimed.task.status, 'pending');
+      assert.equal(reclaimed.task.claim, undefined);
+
+      const secondClaim = await claimTask('team-reclaim-expired', t.id, 'worker-2', reclaimed.task.version ?? null, cwd);
+      assert.equal(secondClaim.ok, true);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

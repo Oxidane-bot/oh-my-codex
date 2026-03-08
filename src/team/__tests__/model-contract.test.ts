@@ -5,7 +5,12 @@ import {
   isLowComplexityAgentType,
   resolveTeamWorkerLaunchArgs,
   TEAM_LOW_COMPLEXITY_DEFAULT_MODEL,
+  resolveTeamLowComplexityDefaultModel,
 } from '../model-contract.js';
+
+function expectedLowComplexityModel(): string {
+  return resolveTeamLowComplexityDefaultModel();
+}
 
 describe('team model contract', () => {
   it('collects inheritable bypass, reasoning, and model overrides', () => {
@@ -31,7 +36,7 @@ describe('team model contract', () => {
       resolveTeamWorkerLaunchArgs({
         existingRaw: '--model env-a --model=env-b',
         inheritedArgs: ['--model', 'inherited-model'],
-        fallbackModel: TEAM_LOW_COMPLEXITY_DEFAULT_MODEL,
+        fallbackModel: expectedLowComplexityModel(),
       }),
       ['--model', 'env-b'],
     );
@@ -52,9 +57,9 @@ describe('team model contract', () => {
       resolveTeamWorkerLaunchArgs({
         existingRaw: '--no-alt-screen',
         inheritedArgs: ['--dangerously-bypass-approvals-and-sandbox'],
-        fallbackModel: TEAM_LOW_COMPLEXITY_DEFAULT_MODEL,
+        fallbackModel: expectedLowComplexityModel(),
       }),
-      ['--no-alt-screen', '--dangerously-bypass-approvals-and-sandbox', '--model', TEAM_LOW_COMPLEXITY_DEFAULT_MODEL],
+      ['--no-alt-screen', '--dangerously-bypass-approvals-and-sandbox', '--model', expectedLowComplexityModel()],
     );
   });
 
@@ -101,7 +106,7 @@ describe('team model contract', () => {
 describe('resolveTeamWorkerLaunchArgs - explicit thinking only', () => {
   it('does not auto-inject thinking level for fallback model', () => {
     const result = resolveTeamWorkerLaunchArgs({
-      fallbackModel: TEAM_LOW_COMPLEXITY_DEFAULT_MODEL,
+      fallbackModel: expectedLowComplexityModel(),
     });
     const joined = result.join(' ');
     assert.ok(!joined.includes('model_reasoning_effort'), `Expected no auto-injected thinking level in: ${joined}`);
@@ -110,7 +115,7 @@ describe('resolveTeamWorkerLaunchArgs - explicit thinking only', () => {
   it('preserves explicit reasoning override', () => {
     const result = resolveTeamWorkerLaunchArgs({
       existingRaw: '-c model_reasoning_effort="high"',
-      fallbackModel: TEAM_LOW_COMPLEXITY_DEFAULT_MODEL,
+      fallbackModel: expectedLowComplexityModel(),
     });
     const joined = result.join(' ');
     // Should contain the explicit high level

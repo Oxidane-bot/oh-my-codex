@@ -229,6 +229,10 @@ export type ReleaseTaskClaimResult =
   | { ok: true; task: TeamTaskV2 }
   | { ok: false; error: 'claim_conflict' | 'task_not_found' | 'already_terminal' | 'lease_expired' };
 
+export type ReclaimTaskResult =
+  | { ok: true; task: TeamTaskV2; reclaimed: boolean }
+  | { ok: false; error: 'claim_conflict' | 'task_not_found' | 'already_terminal' | 'lease_active' };
+
 export interface TeamSummary {
   teamName: string;
   workerCount: number;
