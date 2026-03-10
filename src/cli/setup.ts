@@ -30,10 +30,10 @@ import {
 import { buildMergedConfig, getRootModelName } from "../config/generator.js";
 import { generateAgentToml } from "../agents/native-config.js";
 import { AGENT_DEFINITIONS } from "../agents/definitions.js";
+import { getInstallableAgentNames, getManagedAgentNames, tryReadCatalogManifest } from "../catalog/reader.js";
 import { getPackageRoot } from "../utils/package.js";
 import { readSessionState, isSessionStale } from "../hooks/session.js";
 import { getCatalogHeadlineCounts } from "./catalog-contract.js";
-import { tryReadCatalogManifest } from "../catalog/reader.js";
 
 interface SetupOptions {
   force?: boolean;
@@ -747,12 +747,25 @@ async function refreshNativeAgentConfigs(
   options: Pick<SetupOptions, "dryRun" | "verbose">,
 ): Promise<SetupCategorySummary> {
   const summary = createEmptyCategorySummary();
+  const manifest = tryReadCatalogManifest(pkgRoot);
+  const installableAgentNames = manifest
+    ? new Set(getInstallableAgentNames(pkgRoot))
+    : null;
+  const managedAgentNames = new Set<string>(getManagedAgentNames(pkgRoot));
 
   if (!options.dryRun) {
     await mkdir(agentsDir, { recursive: true });
   }
 
   for (const [name, agent] of Object.entries(AGENT_DEFINITIONS)) {
+    if (installableAgentNames && !installableAgentNames.has(name)) {
+      summary.skipped += 1;
+      if (options.verbose) {
+        console.log(`  skipped ${name}.toml (status: non-installable)`);
+      }
+      continue;
+    }
+
     const promptPath = join(pkgRoot, "prompts", `${name}.md`);
     if (!existsSync(promptPath)) {
       continue;
@@ -769,6 +782,24 @@ async function refreshNativeAgentConfigs(
       options,
       `native agent ${name}.toml`,
     );
+  }
+
+  if (manifest && existsSync(agentsDir)) {
+    const currentEntries = await readdir(agentsDir, { withFileTypes: true });
+    for (const entry of currentEntries) {
+      if (!entry.isFile() || !entry.name.endsWith('.toml')) continue;
+      const name = entry.name.slice(0, -'.toml'.length);
+      if (!managedAgentNames.has(name) || installableAgentNames?.has(name)) continue;
+
+      const dst = join(agentsDir, entry.name);
+      if (!options.dryRun) {
+        await rm(dst, { force: true });
+      }
+      summary.removed += 1;
+      if (options.verbose) {
+        console.log(`  ${options.dryRun ? 'would remove stale' : 'removed stale'} native agent ${entry.name}`);
+      }
+    }
   }
 
   return summary;

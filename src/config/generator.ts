@@ -13,7 +13,7 @@
 import { readFile, writeFile } from "fs/promises";
 import { existsSync } from "fs";
 import { join } from "path";
-import { AGENT_DEFINITIONS } from "../agents/definitions.js";
+import { getInstallableAgentDefinitions, getManagedAgentNames } from "../catalog/reader.js";
 import { omxAgentsConfigDir } from "../utils/paths.js";
 
 interface MergeOptions {
@@ -284,10 +284,10 @@ function isOmxAgentSection(
  *
  * Targets: [mcp_servers.omx_*], [agents.<omx-agent>], [tui]
  */
-function stripOrphanedOmxSections(config: string): string {
+function stripOrphanedOmxSections(config: string, pkgRoot: string): string {
   const lines = config.split(/\r?\n/);
   const result: string[] = [];
-  const omxAgentNames = new Set(Object.keys(AGENT_DEFINITIONS));
+  const omxAgentNames = new Set(getManagedAgentNames(pkgRoot));
 
   let i = 0;
   while (i < lines.length) {
@@ -382,13 +382,12 @@ export function stripExistingOmxBlocks(config: string): {
  * Generate [agents.<name>] entries for Codex native multi-agent support.
  * Each agent gets a description and config_file pointing to ~/.omx/agents/<name>.toml
  */
-function getAgentEntries(agentsConfigDir: string): string[] {
+function getAgentEntries(pkgRoot: string, agentsConfigDir: string): string[] {
   const entries: string[] = [
     "",
     "# OMX Native Agent Roles (Codex multi-agent)",
   ];
-
-  for (const [name, agent] of Object.entries(AGENT_DEFINITIONS)) {
+  for (const [name, agent] of getInstallableAgentDefinitions(pkgRoot)) {
     // TOML table headers with special chars need quoting
     const tableKey = name.includes("-") ? `agents."${name}"` : `agents.${name}`;
     const configFile = escapeTomlString(join(agentsConfigDir, `${name}.toml`));
@@ -464,7 +463,7 @@ function getOmxTablesBlock(pkgRoot: string, agentsConfigDir: string): string {
     `args = ["${teamServerPath}"]`,
     "enabled = true",
     "startup_timeout_sec = 5",
-    ...getAgentEntries(agentsConfigDir),
+    ...getAgentEntries(pkgRoot, agentsConfigDir),
     "",
     "# OMX TUI StatusLine (Codex CLI v0.101.0+)",
     "[tui]",
@@ -506,7 +505,7 @@ export function buildMergedConfig(
   if (options.modelOverride) {
     existing = stripRootLevelKeys(existing, ["model"]);
   }
-  existing = stripOrphanedOmxSections(existing);
+  existing = stripOrphanedOmxSections(existing, pkgRoot);
   existing = upsertFeatureFlags(existing);
 
   const topLines = getOmxTopLevelLines(
