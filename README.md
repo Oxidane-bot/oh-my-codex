@@ -230,8 +230,8 @@ omx agents-init .  # Bootstrap lightweight AGENTS.md files for a repo/subtree
 omx doctor         # Installation/runtime diagnostics
 omx doctor --team  # Team Mode diagnostics
 omx ask ...        # Ask local provider advisor (claude|gemini), writes .omx/artifacts/*
-omx resume         # Resume a previous interactive Codex session
-omx explore ...    # Default read-only exploration entrypoint (may use sparkshell backend)
+omx explore ...    # Run the low-cost read-only exploration harness
+omx team ...       # Start/status/resume/shutdown team workers (interactive tmux by default)
 omx ralph          # Launch Codex with ralph persistence mode active
 omx status         # Show active modes
 omx cancel         # Cancel active execution modes
@@ -263,11 +263,7 @@ omx explore --prompt-file prompts/explore-task.md
 USE_OMX_EXPLORE_CMD=1 omx   # advisory preference for simple read-only exploration prompts
 ```
 
-`omx explore` is the default OMX surface for simple read-only exploration. It stays intentionally read-only and shell-only, and qualifying shell-native read-only tasks may be routed through `omx sparkshell` as a backend when that is the cheaper/more direct fit. The routing flag only adds advisory steering in generated session instructions; ambiguous or implementation-heavy requests stay on the normal Codex path, and OMX falls back normally if the explore harness is unavailable. The harness constrains Codex through a temporary allowlisted shell/bin layer so only approved repository-inspection command families are available during the offloaded run.
-
-- Current shell allowlist: `rg`, `grep`, `ls`, `find`, `wc`, `cat`, `head`, `tail`, `pwd`, `printf`
-- Current shell restrictions: no pipes, redirection, `&&`, `||`, `;`, subshells, path-qualified binaries, non-allowlisted commands, stdin-fed inspection, or path escapes outside the target repository (including existing symlink-resolved escapes)
-- `omx explore` is **not** a full parity surface for modern Codex read-only mode: it does not promise web search, MCP, images, or general-purpose tool access
+`omx explore` is intentionally read-only. The routing flag only adds advisory steering in generated session instructions; ambiguous or implementation-heavy requests stay on the normal Codex path, and OMX falls back normally if the explore harness is unavailable. The harness now also constrains Codex through a temporary allowlisted shell/bin layer so only approved read-only command families are available during the offloaded run.
 
 Packaging / install notes:
 
@@ -281,15 +277,12 @@ Packaging / install notes:
 - Helpful local commands:
 
 ```bash
-npm run build:full
 npm run build:explore
 npm run build:explore:release
 npm run test:explore
 node scripts/smoke-packed-install.mjs --release-assets-dir ./release-assets
 node scripts/check-version-sync.mjs --tag v$(node -p "require('./package.json').version")
 ```
-
-`npm run build:full` is the one-shot source build for TypeScript plus the packaged explore harness and sparkshell native binary.
 
 Non-tmux team launch (advanced):
 
