@@ -790,6 +790,8 @@ describe('teamCommand status', () => {
       assert.match(output, /inspect_task_owner_worker-2: worker-2/);
       assert.match(output, /inspect_approval_status_worker-1: approved/);
       assert.match(output, /inspect_approval_reviewer_worker-1: leader-fixed/);
+      assert.match(output, /inspect_approval_reason_worker-1: Looks good/);
+      assert.match(output, /inspect_approval_decided_at_worker-1: 2026-03-11T00:05:00.000Z/);
       assert.match(output, /inspect_state_worker-1: working/);
       assert.match(output, /inspect_state_worker-2: blocked/);
       assert.match(output, /inspect_state_reason_worker-1: recovering progress/);
@@ -804,7 +806,7 @@ describe('teamCommand status', () => {
       assert.match(output, /inspect_summary: target=worker-1 pane=%21 cli=codex role=executor alive=false turn_count=3 turns_without_progress=0 reason=dead_worker state=working task=1 subject=Recover worker-1 progress command=omx sparkshell --tmux-pane %21 --tail-lines 400/);
       assert.match(output, /inspect_priority_1: omx sparkshell --tmux-pane %21 --tail-lines 400/);
       assert.match(output, /inspect_priority_2: omx sparkshell --tmux-pane %22 --tail-lines 400/);
-      assert.match(output, /inspect_item_1: target=worker-1 pane=%21 cli=codex role=executor index=1 alive=false turn_count=3 turns_without_progress=0 last_turn_at=2026-03-11T00:01:00.000Z status_updated_at=2026-03-11T00:00:00.000Z pid=101 worktree_path=\/tmp\/pane-team\/worktrees\/worker-1 worktree_branch=feat\/pane-team-worker-1 worktree_detached=false workdir=\/tmp\/pane-team\/worker-1 assigned_tasks=1 task_status=pending task_version=1 task_created_at=2026-03-10T23:55:00.000Z task_claim_owner=worker-1 task_claim_leased_until=2026-03-11T00:10:00.000Z approval_required=true requires_code_change=true description=Inspect worker-1 pane task_role=debugger task_owner=worker-1 approval_status=approved approval_reviewer=leader-fixed reason=dead_worker state=working state_reason=recovering progress task=1 subject=Recover worker-1 progress command=omx sparkshell --tmux-pane %21 --tail-lines 400/);
+      assert.match(output, /inspect_item_1: target=worker-1 pane=%21 cli=codex role=executor index=1 alive=false turn_count=3 turns_without_progress=0 last_turn_at=2026-03-11T00:01:00.000Z status_updated_at=2026-03-11T00:00:00.000Z pid=101 worktree_path=\/tmp\/pane-team\/worktrees\/worker-1 worktree_branch=feat\/pane-team-worker-1 worktree_detached=false workdir=\/tmp\/pane-team\/worker-1 assigned_tasks=1 task_status=pending task_version=1 task_created_at=2026-03-10T23:55:00.000Z task_claim_owner=worker-1 task_claim_leased_until=2026-03-11T00:10:00.000Z approval_required=true requires_code_change=true description=Inspect worker-1 pane task_role=debugger task_owner=worker-1 approval_status=approved approval_reviewer=leader-fixed approval_reason=Looks good approval_decided_at=2026-03-11T00:05:00.000Z reason=dead_worker state=working state_reason=recovering progress task=1 subject=Recover worker-1 progress command=omx sparkshell --tmux-pane %21 --tail-lines 400/);
       assert.match(output, /inspect_item_2: target=worker-2 pane=%22 cli=gemini role=executor index=2 alive=false turn_count=4 turns_without_progress=0 last_turn_at=2026-03-11T00:02:00.000Z status_updated_at=2026-03-11T00:00:00.000Z pid=102 worktree_path=\/tmp\/pane-team\/worktrees\/worker-2 worktree_branch=feat\/pane-team-worker-2 worktree_detached=true workdir=\/tmp\/pane-team\/worker-2 assigned_tasks=2,3 task_status=pending task_result=waiting on worker-1 task_error=blocked by dependency task_version=1 task_created_at=2026-03-10T23:56:00.000Z task_completed_at=2026-03-11T00:06:00.000Z task_depends_on=1 requires_code_change=false description=Inspect worker-2 pane blocked_by=1 task_role=test-engineer task_owner=worker-2 reason=dead_worker state=blocked state_reason=waiting for dependency 1 task=2 subject=Recover worker-2 progress command=omx sparkshell --tmux-pane %22 --tail-lines 400/);
       assert.match(output, /panes: leader=%10 hud=%11/);
       assert.match(output, /worker_panes: worker-1=%21 worker-2=%22/);
@@ -950,6 +952,8 @@ describe('teamCommand status', () => {
           recommended_inspect_task_owners?: Record<string, string | null>;
           recommended_inspect_approval_statuses?: Record<string, string | null>;
           recommended_inspect_approval_reviewers?: Record<string, string | null>;
+          recommended_inspect_approval_reasons?: Record<string, string | null>;
+          recommended_inspect_approval_decided_at?: Record<string, string | null>;
           recommended_inspect_states?: Record<string, string | null>;
           recommended_inspect_state_reasons?: Record<string, string | null>;
           recommended_inspect_tasks?: Record<string, string | null>;
@@ -992,6 +996,8 @@ describe('teamCommand status', () => {
             task_owner?: string | null;
             approval_status?: string | null;
             approval_reviewer?: string | null;
+            approval_reason?: string | null;
+            approval_decided_at?: string | null;
             reason?: string;
             state?: string | null;
             state_reason?: string | null;
@@ -1041,6 +1047,8 @@ describe('teamCommand status', () => {
       assert.deepEqual(payload.panes?.recommended_inspect_task_owners, { 'worker-1': 'worker-1' });
       assert.deepEqual(payload.panes?.recommended_inspect_approval_statuses, { 'worker-1': 'approved' });
       assert.deepEqual(payload.panes?.recommended_inspect_approval_reviewers, { 'worker-1': 'leader-fixed' });
+      assert.deepEqual(payload.panes?.recommended_inspect_approval_reasons, { 'worker-1': 'Looks good' });
+      assert.deepEqual(payload.panes?.recommended_inspect_approval_decided_at, { 'worker-1': '2026-03-11T00:05:00.000Z' });
       assert.deepEqual(payload.panes?.recommended_inspect_states, { 'worker-1': 'working' });
       assert.deepEqual(payload.panes?.recommended_inspect_state_reasons, { 'worker-1': 'recovering progress' });
       assert.deepEqual(payload.panes?.recommended_inspect_tasks, { 'worker-1': '1' });
@@ -1083,6 +1091,8 @@ describe('teamCommand status', () => {
         task_owner: 'worker-1',
         approval_status: 'approved',
         approval_reviewer: 'leader-fixed',
+        approval_reason: 'Looks good',
+        approval_decided_at: '2026-03-11T00:05:00.000Z',
         reason: 'dead_worker',
         state: 'working',
         state_reason: 'recovering progress',
