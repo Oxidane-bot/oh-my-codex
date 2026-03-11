@@ -35,9 +35,12 @@ interface ParsedTeamArgs {
 }
 
 const MIN_WORKER_COUNT = 1;
+const DEFAULT_SPARKSHELL_TAIL_LINES = 400;
+const MIN_SPARKSHELL_TAIL_LINES = 100;
+const MAX_SPARKSHELL_TAIL_LINES = 1000;
 const TEAM_HELP = `
 Usage: omx team [ralph] [N:agent-type] "<task description>"
-       omx team status <team-name> [--json]
+       omx team status <team-name> [--json] [--tail-lines <100-1000>]
        omx team await <team-name> [--timeout-ms <ms>] [--after-event-id <id>] [--json]
        omx team resume <team-name>
        omx team shutdown <team-name> [--force] [--ralph]
@@ -48,6 +51,7 @@ Examples:
   omx team 3:executor "fix failing tests"
   omx team status my-team
   omx team status my-team --json
+  omx team status my-team --tail-lines 600
   omx team api send-message --input '{"team_name":"my-team","from_worker":"worker-1","to_worker":"leader-fixed","body":"ACK"}' --json
 `;
 
@@ -207,6 +211,28 @@ function buildJsonBase(): { schema_version: string; timestamp: string } {
   };
 }
 
+function parseStatusTailLines(args: string[]): number {
+  for (let index = 0; index < args.length; index += 1) {
+    const token = args[index];
+    if (token === '--tail-lines') {
+      const next = args[index + 1];
+      const parsed = Number.parseInt(next || '', 10);
+      if (!Number.isFinite(parsed) || parsed < MIN_SPARKSHELL_TAIL_LINES || parsed > MAX_SPARKSHELL_TAIL_LINES) {
+        throw new Error(`Usage: omx team status <team-name> [--json] [--tail-lines <${MIN_SPARKSHELL_TAIL_LINES}-${MAX_SPARKSHELL_TAIL_LINES}>]`);
+      }
+      return parsed;
+    }
+    if (token.startsWith('--tail-lines=')) {
+      const parsed = Number.parseInt(token.slice('--tail-lines='.length), 10);
+      if (!Number.isFinite(parsed) || parsed < MIN_SPARKSHELL_TAIL_LINES || parsed > MAX_SPARKSHELL_TAIL_LINES) {
+        throw new Error(`Usage: omx team status <team-name> [--json] [--tail-lines <${MIN_SPARKSHELL_TAIL_LINES}-${MAX_SPARKSHELL_TAIL_LINES}>]`);
+      }
+      return parsed;
+    }
+  }
+  return DEFAULT_SPARKSHELL_TAIL_LINES;
+}
+
 export interface ParsedTeamStartArgs {
   parsed: ParsedTeamArgs;
   worktreeMode: WorktreeMode;
@@ -294,6 +320,7 @@ function buildDeadWorkerAwaitEvent(teamName: string, snapshot: TeamSnapshot): Te
 function readTeamPaneStatus(
   config: Awaited<ReturnType<typeof readTeamConfig>>,
   snapshot?: Pick<TeamSnapshot, 'deadWorkers' | 'nonReportingWorkers'>,
+  tailLines: number = DEFAULT_SPARKSHELL_TAIL_LINES,
 ): {
   leader_pane_id: string | null;
   hud_pane_id: string | null;
@@ -331,11 +358,11 @@ function readTeamPaneStatus(
 
   const sparkshellCommands = Object.fromEntries(
     [
-      leaderPaneId ? ['leader', `omx sparkshell --tmux-pane ${leaderPaneId} --tail-lines 400`] : null,
-      hudPaneId ? ['hud', `omx sparkshell --tmux-pane ${hudPaneId} --tail-lines 400`] : null,
+      leaderPaneId ? ['leader', `omx sparkshell --tmux-pane ${leaderPaneId} --tail-lines ${tailLines}`] : null,
+      hudPaneId ? ['hud', `omx sparkshell --tmux-pane ${hudPaneId} --tail-lines ${tailLines}`] : null,
       ...Object.entries(workerPanes).map(([workerName, paneId]) => [
         workerName,
-        `omx sparkshell --tmux-pane ${paneId} --tail-lines 400`,
+        `omx sparkshell --tmux-pane ${paneId} --tail-lines ${tailLines}`,
       ] as const),
     ].filter((entry): entry is [string, string] => entry !== null),
   );
@@ -859,13 +886,15 @@ export async function teamCommand(args: string[], options: TeamCliOptions = {}):
       console.log(`No team state found for ${name}`);
       return;
     }
-    const paneStatus = readTeamPaneStatus(await readTeamConfig(name, cwd), snapshot);
+    const tailLines = parseStatusTailLines(teamArgs.slice(2));
+    const paneStatus = readTeamPaneStatus(await readTeamConfig(name, cwd), snapshot, tailLines);
     if (wantsJson) {
       console.log(JSON.stringify({
         ...buildJsonBase(),
         command: 'omx team status',
         team_name: snapshot.teamName,
         status: 'ok',
+        tail_lines: tailLines,
         phase: snapshot.phase,
         dead_workers: snapshot.deadWorkers,
         non_reporting_workers: snapshot.nonReportingWorkers,

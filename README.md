@@ -133,6 +133,7 @@ From terminal:
 omx team 4:executor "parallelize a multi-module refactor"
 omx team status <team-name>
 omx team status <team-name> --json
+omx team status <team-name> --tail-lines 600
 omx team shutdown <team-name>
 ```
 
@@ -372,6 +373,7 @@ omx team --help
 omx team api --help
 omx team status <team-name>
 omx team status <team-name> --json
+omx team status <team-name> --tail-lines 600
 omx team resume <team-name>
 omx team shutdown <team-name>
 ```

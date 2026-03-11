@@ -773,6 +773,51 @@ describe('teamCommand status', () => {
       await rm(wd, { recursive: true, force: true });
     }
   });
+
+  it('supports custom tail lines for generated sparkshell commands', async () => {
+    const wd = await mkdtemp(join(tmpdir(), 'omx-team-status-tail-lines-'));
+    const previousCwd = process.cwd();
+    const logs: string[] = [];
+    const originalLog = console.log;
+    try {
+      process.chdir(wd);
+      const config = await initTeamState('pane-tail-team', 'inspect worker panes', 'executor', 1, wd);
+      config.workers[0]!.pane_id = '%51';
+      const manifestPath = join(wd, '.omx', 'state', 'team', 'pane-tail-team', 'manifest.v2.json');
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as {
+        workers?: Array<{ pane_id?: string }>;
+      };
+      manifest.workers = config.workers.map((worker) => ({
+        ...worker,
+        pane_id: worker.pane_id,
+      }));
+      await writeFile(
+        join(wd, '.omx', 'state', 'team', 'pane-tail-team', 'config.json'),
+        `${JSON.stringify(config, null, 2)}\n`,
+      );
+      await writeFile(
+        manifestPath,
+        `${JSON.stringify(manifest, null, 2)}\n`,
+      );
+
+      console.log = (...args: unknown[]) => logs.push(args.map(String).join(' '));
+      await teamCommand(['status', 'pane-tail-team', '--tail-lines', '600']);
+      assert.match(logs.join('\n'), /inspect_worker-1: omx sparkshell --tmux-pane %51 --tail-lines 600/);
+
+      logs.length = 0;
+      await teamCommand(['status', 'pane-tail-team', '--json', '--tail-lines=550']);
+      const payload = JSON.parse(logs.at(-1) ?? '{}') as {
+        tail_lines?: number;
+        panes?: { sparkshell_commands?: Record<string, string> };
+      };
+      assert.equal(payload.tail_lines, 550);
+      assert.equal(payload.panes?.sparkshell_commands?.['worker-1'], 'omx sparkshell --tmux-pane %51 --tail-lines 550');
+    } finally {
+      console.log = originalLog;
+      process.chdir(previousCwd);
+      await rm(wd, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('teamCommand await', () => {
