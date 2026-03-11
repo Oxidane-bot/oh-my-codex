@@ -34,6 +34,8 @@ Operational runtime for [OpenAI Codex CLI](https://github.com/openai/codex).
 - [Français (French)](./README.fr.md)
 - [Italiano (Italian)](./README.it.md)
 
+> Note: the English README is the source of truth for the latest positioning updates; localized READMEs may lag briefly and should be synced in follow-up docs work.
+
 OMX turns Codex into an operational runtime for real multi-step work:
 - **Team Mode first** — coordinated multi-agent execution with shared visibility, resume, recovery, and lifecycle control
 - **Role prompts + skills** — productized behaviors for planners, executors, reviewers, and reusable workflows
@@ -250,6 +252,20 @@ OMX now includes `omx hooks` for plugin scaffolding and validation.
 - Plugins are off by default; enable with `OMX_HOOK_PLUGINS=1`.
 
 See `docs/hooks-extension.md` for the full extension workflow and event model.
+
+## SDK & Integration Surface
+
+Team Mode remains the primary product surface, but OMX also exposes a programmable integration layer for embedding and automation.
+
+- Use **Team Mode** when humans want to operate, supervise, and recover long-running multi-agent work.
+- Use the **SDK / plugin surface** when OMX needs to plug into surrounding systems, custom automations, or event-driven workflows.
+
+Current extension surface includes:
+- `omx hooks` plugin scaffolding and validation
+- hook plugins with an SDK surface for `tmux`, `state`, and structured logging
+- MCP-backed runtime state that can be integrated into higher-level tooling
+
+See `docs/hooks-extension.md` for the current programmable surface.
 
 ## Launch Flags
 
