@@ -730,6 +730,8 @@ describe('teamCommand status', () => {
       assert.match(output, /inspect_task_status_worker-2: pending/);
       assert.match(output, /inspect_requires_code_change_worker-1: true/);
       assert.match(output, /inspect_requires_code_change_worker-2: false/);
+      assert.match(output, /inspect_description_worker-1: Inspect worker-1 pane/);
+      assert.match(output, /inspect_description_worker-2: Inspect worker-2 pane/);
       assert.match(output, /inspect_state_worker-1: working/);
       assert.match(output, /inspect_state_worker-2: blocked/);
       assert.match(output, /inspect_task_worker-1: 1/);
@@ -742,8 +744,8 @@ describe('teamCommand status', () => {
       assert.match(output, /inspect_summary: target=worker-1 pane=%21 cli=codex role=executor alive=false turn_count=3 turns_without_progress=0 reason=dead_worker state=working task=1 subject=Recover worker-1 progress command=omx sparkshell --tmux-pane %21 --tail-lines 400/);
       assert.match(output, /inspect_priority_1: omx sparkshell --tmux-pane %21 --tail-lines 400/);
       assert.match(output, /inspect_priority_2: omx sparkshell --tmux-pane %22 --tail-lines 400/);
-      assert.match(output, /inspect_item_1: target=worker-1 pane=%21 cli=codex role=executor index=1 alive=false turn_count=3 turns_without_progress=0 last_turn_at=2026-03-11T00:01:00.000Z status_updated_at=2026-03-11T00:00:00.000Z pid=101 worktree_path=\/tmp\/pane-team\/worktrees\/worker-1 worktree_branch=feat\/pane-team-worker-1 worktree_detached=false workdir=\/tmp\/pane-team\/worker-1 assigned_tasks=1 task_status=pending requires_code_change=true reason=dead_worker state=working task=1 subject=Recover worker-1 progress command=omx sparkshell --tmux-pane %21 --tail-lines 400/);
-      assert.match(output, /inspect_item_2: target=worker-2 pane=%22 cli=gemini role=executor index=2 alive=false turn_count=4 turns_without_progress=0 last_turn_at=2026-03-11T00:02:00.000Z status_updated_at=2026-03-11T00:00:00.000Z pid=102 worktree_path=\/tmp\/pane-team\/worktrees\/worker-2 worktree_branch=feat\/pane-team-worker-2 worktree_detached=true workdir=\/tmp\/pane-team\/worker-2 assigned_tasks=2,3 task_status=pending requires_code_change=false reason=dead_worker state=blocked task=2 subject=Recover worker-2 progress command=omx sparkshell --tmux-pane %22 --tail-lines 400/);
+      assert.match(output, /inspect_item_1: target=worker-1 pane=%21 cli=codex role=executor index=1 alive=false turn_count=3 turns_without_progress=0 last_turn_at=2026-03-11T00:01:00.000Z status_updated_at=2026-03-11T00:00:00.000Z pid=101 worktree_path=\/tmp\/pane-team\/worktrees\/worker-1 worktree_branch=feat\/pane-team-worker-1 worktree_detached=false workdir=\/tmp\/pane-team\/worker-1 assigned_tasks=1 task_status=pending requires_code_change=true description=Inspect worker-1 pane reason=dead_worker state=working task=1 subject=Recover worker-1 progress command=omx sparkshell --tmux-pane %21 --tail-lines 400/);
+      assert.match(output, /inspect_item_2: target=worker-2 pane=%22 cli=gemini role=executor index=2 alive=false turn_count=4 turns_without_progress=0 last_turn_at=2026-03-11T00:02:00.000Z status_updated_at=2026-03-11T00:00:00.000Z pid=102 worktree_path=\/tmp\/pane-team\/worktrees\/worker-2 worktree_branch=feat\/pane-team-worker-2 worktree_detached=true workdir=\/tmp\/pane-team\/worker-2 assigned_tasks=2,3 task_status=pending requires_code_change=false description=Inspect worker-2 pane reason=dead_worker state=blocked task=2 subject=Recover worker-2 progress command=omx sparkshell --tmux-pane %22 --tail-lines 400/);
       assert.match(output, /panes: leader=%10 hud=%11/);
       assert.match(output, /worker_panes: worker-1=%21 worker-2=%22/);
       assert.match(output, /sparkshell_hint: omx sparkshell --tmux-pane <pane-id> --tail-lines 400/);
@@ -849,6 +851,7 @@ describe('teamCommand status', () => {
           recommended_inspect_assigned_tasks?: Record<string, string[]>;
           recommended_inspect_task_statuses?: Record<string, string | null>;
           recommended_inspect_requires_code_change?: Record<string, boolean | null>;
+          recommended_inspect_descriptions?: Record<string, string | null>;
           recommended_inspect_states?: Record<string, string | null>;
           recommended_inspect_tasks?: Record<string, string | null>;
           recommended_inspect_subjects?: Record<string, string | null>;
@@ -875,6 +878,7 @@ describe('teamCommand status', () => {
             assigned_tasks?: string[];
             task_status?: string | null;
             requires_code_change?: boolean | null;
+            task_description?: string | null;
             reason?: string;
             state?: string | null;
             task_id?: string | null;
@@ -908,6 +912,7 @@ describe('teamCommand status', () => {
       assert.deepEqual(payload.panes?.recommended_inspect_assigned_tasks, { 'worker-1': ['1', 'extra-2'] });
       assert.deepEqual(payload.panes?.recommended_inspect_task_statuses, { 'worker-1': 'pending' });
       assert.deepEqual(payload.panes?.recommended_inspect_requires_code_change, { 'worker-1': true });
+      assert.deepEqual(payload.panes?.recommended_inspect_descriptions, { 'worker-1': 'Inspect worker-1 pane' });
       assert.deepEqual(payload.panes?.recommended_inspect_states, { 'worker-1': 'working' });
       assert.deepEqual(payload.panes?.recommended_inspect_tasks, { 'worker-1': '1' });
       assert.deepEqual(payload.panes?.recommended_inspect_subjects, { 'worker-1': 'Recover worker-1 progress' });
@@ -934,6 +939,7 @@ describe('teamCommand status', () => {
         assigned_tasks: ['1', 'extra-2'],
         task_status: 'pending',
         requires_code_change: true,
+        task_description: 'Inspect worker-1 pane',
         reason: 'dead_worker',
         state: 'working',
         task_id: '1',
