@@ -11,6 +11,7 @@ import {
   initTeamState,
   updateWorkerHeartbeat,
   writeMonitorSnapshot,
+  writeTaskApproval,
   writeWorkerStatus,
 } from '../../team/state.js';
 
@@ -1207,6 +1208,7 @@ describe('teamCommand status', () => {
         task_claim_owner: 'worker-1',
         task_claim_token: 'claim-token-1',
         task_claim_leased_until: '2026-03-11T00:11:00.000Z',
+        task_claim_lock_path: `${wd}/.omx/state/team/pane-json-team/claims/task-1.lock`,
         approval_required: true,
         requires_code_change: true,
         task_description: 'Inspect worker-1 pane',
