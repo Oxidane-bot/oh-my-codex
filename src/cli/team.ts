@@ -342,6 +342,7 @@ async function readTeamPaneStatus(
   recommended_inspect_status_updated_at: Record<string, string | null>;
   recommended_inspect_pids: Record<string, number | null>;
   recommended_inspect_worktree_paths: Record<string, string | null>;
+  recommended_inspect_worktree_repo_roots: Record<string, string | null>;
   recommended_inspect_worktree_branches: Record<string, string | null>;
   recommended_inspect_worktree_detached: Record<string, boolean | null>;
   recommended_inspect_worktree_created: Record<string, boolean | null>;
@@ -388,6 +389,7 @@ async function readTeamPaneStatus(
     last_turn_at: string | null;
     status_updated_at: string | null;
     pid: number | null;
+    worktree_repo_root: string | null;
     worktree_path: string | null;
     worktree_branch: string | null;
     worktree_detached: boolean | null;
@@ -442,6 +444,7 @@ async function readTeamPaneStatus(
       recommended_inspect_status_updated_at: {},
       recommended_inspect_pids: {},
       recommended_inspect_worktree_paths: {},
+      recommended_inspect_worktree_repo_roots: {},
       recommended_inspect_worktree_branches: {},
       recommended_inspect_worktree_detached: {},
       recommended_inspect_worktree_created: {},
@@ -573,6 +576,12 @@ async function readTeamPaneStatus(
     recommendedInspectTargets.map((target) => {
       const worker = config.workers.find((candidate) => candidate.name === target);
       return [target, worker?.worktree_path ?? null];
+    }),
+  );
+  const recommendedInspectWorktreeRepoRoots = Object.fromEntries(
+    recommendedInspectTargets.map((target) => {
+      const worker = config.workers.find((candidate) => candidate.name === target);
+      return [target, worker?.worktree_repo_root ?? null];
     }),
   );
   const recommendedInspectWorktreeBranches = Object.fromEntries(
@@ -821,6 +830,7 @@ async function readTeamPaneStatus(
         last_turn_at: recommendedInspectLastTurnAt[target] ?? null,
         status_updated_at: recommendedInspectStatusUpdatedAt[target] ?? null,
         pid: recommendedInspectPids[target] ?? null,
+        worktree_repo_root: recommendedInspectWorktreeRepoRoots[target] ?? null,
         worktree_path: recommendedInspectWorktreePaths[target] ?? null,
         worktree_branch: recommendedInspectWorktreeBranches[target] ?? null,
         worktree_detached: recommendedInspectWorktreeDetached[target] ?? null,
@@ -878,6 +888,7 @@ async function readTeamPaneStatus(
     recommended_inspect_status_updated_at: recommendedInspectStatusUpdatedAt,
     recommended_inspect_pids: recommendedInspectPids,
     recommended_inspect_worktree_paths: recommendedInspectWorktreePaths,
+    recommended_inspect_worktree_repo_roots: recommendedInspectWorktreeRepoRoots,
     recommended_inspect_worktree_branches: recommendedInspectWorktreeBranches,
     recommended_inspect_worktree_detached: recommendedInspectWorktreeDetached,
     recommended_inspect_worktree_created: recommendedInspectWorktreeCreated,
@@ -986,6 +997,11 @@ function renderTeamPaneStatus(
   for (const [target, worktreePath] of Object.entries(paneStatus.recommended_inspect_worktree_paths)) {
     if (worktreePath) {
       console.log(`inspect_worktree_path_${target}: ${worktreePath}`);
+    }
+  }
+  for (const [target, worktreeRepoRoot] of Object.entries(paneStatus.recommended_inspect_worktree_repo_roots)) {
+    if (worktreeRepoRoot) {
+      console.log(`inspect_worktree_repo_root_${target}: ${worktreeRepoRoot}`);
     }
   }
   for (const [target, worktreeBranch] of Object.entries(paneStatus.recommended_inspect_worktree_branches)) {
@@ -1165,6 +1181,7 @@ function renderTeamPaneStatus(
     const lastTurnPart = item.last_turn_at ? ` last_turn_at=${item.last_turn_at}` : '';
     const statusUpdatedPart = item.status_updated_at ? ` status_updated_at=${item.status_updated_at}` : '';
     const pidPart = typeof item.pid === 'number' ? ` pid=${item.pid}` : '';
+    const worktreeRepoRootPart = item.worktree_repo_root ? ` worktree_repo_root=${item.worktree_repo_root}` : '';
     const worktreePathPart = item.worktree_path ? ` worktree_path=${item.worktree_path}` : '';
     const worktreeBranchPart = item.worktree_branch ? ` worktree_branch=${item.worktree_branch}` : '';
     const worktreeDetachedPart = typeof item.worktree_detached === 'boolean'
@@ -1204,7 +1221,7 @@ function renderTeamPaneStatus(
     const stateReasonPart = item.state_reason ? ` state_reason=${item.state_reason}` : '';
     const taskPart = item.task_id ? ` task=${item.task_id}` : '';
     const subjectPart = item.task_subject ? ` subject=${item.task_subject}` : '';
-    console.log(`inspect_item_${index + 1}: target=${item.target}${panePart}${cliPart}${rolePart}${indexPart}${alivePart}${turnCountPart}${turnsWithoutProgressPart}${lastTurnPart}${statusUpdatedPart}${pidPart}${worktreePathPart}${worktreeBranchPart}${worktreeDetachedPart}${worktreeCreatedPart}${workdirPart}${assignedTasksPart}${taskStatusPart}${taskResultPart}${taskErrorPart}${taskVersionPart}${taskCreatedAtPart}${taskCompletedAtPart}${taskDependsOnPart}${taskClaimOwnerPart}${taskClaimTokenPart}${taskClaimLeasePart}${approvalRequiredPart}${requiresCodeChangePart}${taskDescriptionPart}${blockedByPart}${taskRolePart}${taskOwnerPart}${approvalStatusPart}${approvalReviewerPart}${approvalReasonPart}${approvalDecidedAtPart}${approvalRecordPresentPart} reason=${item.reason}${statePart}${stateReasonPart}${taskPart}${subjectPart} command=${item.command}`);
+    console.log(`inspect_item_${index + 1}: target=${item.target}${panePart}${cliPart}${rolePart}${indexPart}${alivePart}${turnCountPart}${turnsWithoutProgressPart}${lastTurnPart}${statusUpdatedPart}${pidPart}${worktreeRepoRootPart}${worktreePathPart}${worktreeBranchPart}${worktreeDetachedPart}${worktreeCreatedPart}${workdirPart}${assignedTasksPart}${taskStatusPart}${taskResultPart}${taskErrorPart}${taskVersionPart}${taskCreatedAtPart}${taskCompletedAtPart}${taskDependsOnPart}${taskClaimOwnerPart}${taskClaimTokenPart}${taskClaimLeasePart}${approvalRequiredPart}${requiresCodeChangePart}${taskDescriptionPart}${blockedByPart}${taskRolePart}${taskOwnerPart}${approvalStatusPart}${approvalReviewerPart}${approvalReasonPart}${approvalDecidedAtPart}${approvalRecordPresentPart} reason=${item.reason}${statePart}${stateReasonPart}${taskPart}${subjectPart} command=${item.command}`);
   }
 
   for (const [target, command] of Object.entries(paneStatus.sparkshell_commands)) {

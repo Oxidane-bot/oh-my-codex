@@ -671,6 +671,8 @@ describe('teamCommand status', () => {
       config.workers[1]!.pane_id = '%22';
       config.workers[0]!.working_dir = '/tmp/pane-team/worker-1';
       config.workers[1]!.working_dir = '/tmp/pane-team/worker-2';
+      config.workers[0]!.worktree_repo_root = '/tmp/pane-team/repo';
+      config.workers[1]!.worktree_repo_root = '/tmp/pane-team/repo';
       config.workers[0]!.worktree_path = '/tmp/pane-team/worktrees/worker-1';
       config.workers[1]!.worktree_path = '/tmp/pane-team/worktrees/worker-2';
       config.workers[0]!.worktree_branch = 'feat/pane-team-worker-1';
@@ -760,6 +762,8 @@ describe('teamCommand status', () => {
       assert.match(output, /inspect_pid_worker-2: 102/);
       assert.match(output, /inspect_worktree_path_worker-1: \/tmp\/pane-team\/worktrees\/worker-1/);
       assert.match(output, /inspect_worktree_path_worker-2: \/tmp\/pane-team\/worktrees\/worker-2/);
+      assert.match(output, /inspect_worktree_repo_root_worker-1: \/tmp\/pane-team\/repo/);
+      assert.match(output, /inspect_worktree_repo_root_worker-2: \/tmp\/pane-team\/repo/);
       assert.match(output, /inspect_worktree_branch_worker-1: feat\/pane-team-worker-1/);
       assert.match(output, /inspect_worktree_branch_worker-2: feat\/pane-team-worker-2/);
       assert.match(output, /inspect_worktree_detached_worker-1: false/);
@@ -812,8 +816,8 @@ describe('teamCommand status', () => {
       assert.match(output, /inspect_summary: target=worker-1 pane=%21 cli=codex role=executor alive=false turn_count=3 turns_without_progress=0 reason=dead_worker state=working task=1 subject=Recover worker-1 progress command=omx sparkshell --tmux-pane %21 --tail-lines 400/);
       assert.match(output, /inspect_priority_1: omx sparkshell --tmux-pane %21 --tail-lines 400/);
       assert.match(output, /inspect_priority_2: omx sparkshell --tmux-pane %22 --tail-lines 400/);
-      assert.match(output, /inspect_item_1: target=worker-1 pane=%21 cli=codex role=executor index=1 alive=false turn_count=3 turns_without_progress=0 last_turn_at=2026-03-11T00:01:00.000Z status_updated_at=2026-03-11T00:00:00.000Z pid=101 worktree_path=\/tmp\/pane-team\/worktrees\/worker-1 worktree_branch=feat\/pane-team-worker-1 worktree_detached=false worktree_created=true workdir=\/tmp\/pane-team\/worker-1 assigned_tasks=1 task_status=pending task_version=1 task_created_at=2026-03-10T23:55:00.000Z task_claim_owner=worker-1 task_claim_token=claim-token-1 task_claim_leased_until=2026-03-11T00:10:00.000Z approval_required=true requires_code_change=true description=Inspect worker-1 pane task_role=debugger task_owner=worker-1 approval_status=approved approval_reviewer=leader-fixed approval_reason=Looks good approval_decided_at=2026-03-11T00:05:00.000Z approval_record_present=true reason=dead_worker state=working state_reason=recovering progress task=1 subject=Recover worker-1 progress command=omx sparkshell --tmux-pane %21 --tail-lines 400/);
-      assert.match(output, /inspect_item_2: target=worker-2 pane=%22 cli=gemini role=executor index=2 alive=false turn_count=4 turns_without_progress=0 last_turn_at=2026-03-11T00:02:00.000Z status_updated_at=2026-03-11T00:00:00.000Z pid=102 worktree_path=\/tmp\/pane-team\/worktrees\/worker-2 worktree_branch=feat\/pane-team-worker-2 worktree_detached=true worktree_created=false workdir=\/tmp\/pane-team\/worker-2 assigned_tasks=2,3 task_status=pending task_result=waiting on worker-1 task_error=blocked by dependency task_version=1 task_created_at=2026-03-10T23:56:00.000Z task_completed_at=2026-03-11T00:06:00.000Z task_depends_on=1 requires_code_change=false description=Inspect worker-2 pane blocked_by=1 task_role=test-engineer task_owner=worker-2 approval_record_present=false reason=dead_worker state=blocked state_reason=waiting for dependency 1 task=2 subject=Recover worker-2 progress command=omx sparkshell --tmux-pane %22 --tail-lines 400/);
+      assert.match(output, /inspect_item_1: target=worker-1 pane=%21 cli=codex role=executor index=1 alive=false turn_count=3 turns_without_progress=0 last_turn_at=2026-03-11T00:01:00.000Z status_updated_at=2026-03-11T00:00:00.000Z pid=101 worktree_repo_root=\/tmp\/pane-team\/repo worktree_path=\/tmp\/pane-team\/worktrees\/worker-1 worktree_branch=feat\/pane-team-worker-1 worktree_detached=false worktree_created=true workdir=\/tmp\/pane-team\/worker-1 assigned_tasks=1 task_status=pending task_version=1 task_created_at=2026-03-10T23:55:00.000Z task_claim_owner=worker-1 task_claim_token=claim-token-1 task_claim_leased_until=2026-03-11T00:10:00.000Z approval_required=true requires_code_change=true description=Inspect worker-1 pane task_role=debugger task_owner=worker-1 approval_status=approved approval_reviewer=leader-fixed approval_reason=Looks good approval_decided_at=2026-03-11T00:05:00.000Z approval_record_present=true reason=dead_worker state=working state_reason=recovering progress task=1 subject=Recover worker-1 progress command=omx sparkshell --tmux-pane %21 --tail-lines 400/);
+      assert.match(output, /inspect_item_2: target=worker-2 pane=%22 cli=gemini role=executor index=2 alive=false turn_count=4 turns_without_progress=0 last_turn_at=2026-03-11T00:02:00.000Z status_updated_at=2026-03-11T00:00:00.000Z pid=102 worktree_repo_root=\/tmp\/pane-team\/repo worktree_path=\/tmp\/pane-team\/worktrees\/worker-2 worktree_branch=feat\/pane-team-worker-2 worktree_detached=true worktree_created=false workdir=\/tmp\/pane-team\/worker-2 assigned_tasks=2,3 task_status=pending task_result=waiting on worker-1 task_error=blocked by dependency task_version=1 task_created_at=2026-03-10T23:56:00.000Z task_completed_at=2026-03-11T00:06:00.000Z task_depends_on=1 requires_code_change=false description=Inspect worker-2 pane blocked_by=1 task_role=test-engineer task_owner=worker-2 approval_record_present=false reason=dead_worker state=blocked state_reason=waiting for dependency 1 task=2 subject=Recover worker-2 progress command=omx sparkshell --tmux-pane %22 --tail-lines 400/);
       assert.match(output, /panes: leader=%10 hud=%11/);
       assert.match(output, /worker_panes: worker-1=%21 worker-2=%22/);
       assert.match(output, /sparkshell_hint: omx sparkshell --tmux-pane <pane-id> --tail-lines 400/);
@@ -864,6 +868,7 @@ describe('teamCommand status', () => {
       config.hud_pane_id = '%31';
       config.workers[0]!.pane_id = '%41';
       config.workers[0]!.working_dir = '/tmp/pane-json-team/worker-1';
+      config.workers[0]!.worktree_repo_root = '/tmp/pane-json-team/repo';
       config.workers[0]!.worktree_path = '/tmp/pane-json-team/worktrees/worker-1';
       config.workers[0]!.worktree_branch = 'feat/pane-json-team-worker-1';
       config.workers[0]!.worktree_detached = false;
@@ -938,6 +943,7 @@ describe('teamCommand status', () => {
           recommended_inspect_status_updated_at?: Record<string, string | null>;
           recommended_inspect_pids?: Record<string, number | null>;
           recommended_inspect_worktree_paths?: Record<string, string | null>;
+          recommended_inspect_worktree_repo_roots?: Record<string, string | null>;
           recommended_inspect_worktree_branches?: Record<string, string | null>;
           recommended_inspect_worktree_detached?: Record<string, boolean | null>;
           recommended_inspect_worktree_created?: Record<string, boolean | null>;
@@ -984,6 +990,7 @@ describe('teamCommand status', () => {
             last_turn_at?: string | null;
             status_updated_at?: string | null;
             pid?: number | null;
+            worktree_repo_root?: string | null;
             worktree_path?: string | null;
             worktree_branch?: string | null;
             worktree_detached?: boolean | null;
@@ -1039,6 +1046,7 @@ describe('teamCommand status', () => {
       assert.deepEqual(payload.panes?.recommended_inspect_status_updated_at, { 'worker-1': '2026-03-11T00:00:00.000Z' });
       assert.deepEqual(payload.panes?.recommended_inspect_pids, { 'worker-1': 201 });
       assert.deepEqual(payload.panes?.recommended_inspect_worktree_paths, { 'worker-1': '/tmp/pane-json-team/worktrees/worker-1' });
+      assert.deepEqual(payload.panes?.recommended_inspect_worktree_repo_roots, { 'worker-1': '/tmp/pane-json-team/repo' });
       assert.deepEqual(payload.panes?.recommended_inspect_worktree_branches, { 'worker-1': 'feat/pane-json-team-worker-1' });
       assert.deepEqual(payload.panes?.recommended_inspect_worktree_detached, { 'worker-1': false });
       assert.deepEqual(payload.panes?.recommended_inspect_worktree_created, { 'worker-1': true });
@@ -1085,6 +1093,7 @@ describe('teamCommand status', () => {
         last_turn_at: '2026-03-11T00:03:00.000Z',
         status_updated_at: '2026-03-11T00:00:00.000Z',
         pid: 201,
+        worktree_repo_root: '/tmp/pane-json-team/repo',
         worktree_path: '/tmp/pane-json-team/worktrees/worker-1',
         worktree_branch: 'feat/pane-json-team-worker-1',
         worktree_detached: false,
