@@ -34,14 +34,14 @@ describe('package bin contract', () => {
     assert.ok(pkg.files?.includes('Cargo.lock'));
     assert.ok(pkg.files?.includes('crates/'));
 
-    const binPath = join(process.cwd(), 'bin', 'omx.js');
-    assert.equal(existsSync(binPath), true, 'expected bin/omx.js to exist');
+    const binPath = join(process.cwd(), 'bin', 'omx');
+    assert.equal(existsSync(binPath), true, 'expected bin/omx to exist');
 
     const binSource = readFileSync(binPath, 'utf-8');
-    assert.match(binSource, /^#!\/usr\/bin\/env node/);
+    assert.match(binSource, /^#!\/bin\/sh/);
 
     const stat = statSync(binPath);
-    assert.notEqual(stat.mode & 0o111, 0, 'expected bin/omx.js to be executable');
+    assert.notEqual(stat.mode & 0o111, 0, 'expected bin/omx to be executable');
 
     const packed = spawnSync('npm', ['pack', '--dry-run', '--json'], {
       cwd: process.cwd(),

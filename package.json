@@ -3,9 +3,8 @@
   "version": "0.8.15",
   "description": "Multi-agent orchestration layer for OpenAI Codex CLI",
   "type": "module",
-  "main": "dist/index.js",
   "bin": {
-    "omx": "bin/omx.js"
+    "omx": "bin/omx"
   },
   "scripts": {
     "build": "tsc",
@@ -38,7 +37,6 @@
   },
   "files": [
     "bin/",
-    "dist/",
     "agents/",
     "skills/",
     "prompts/",
