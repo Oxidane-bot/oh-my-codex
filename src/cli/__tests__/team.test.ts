@@ -836,14 +836,16 @@ describe('teamCommand status', () => {
       assert.match(output, /inspect_worker_shutdown_ack_path_worker-2: .*\/\.omx\/state\/team\/pane-team\/workers\/worker-2\/shutdown-ack\.json/);
       assert.match(output, /inspect_team_config_path_worker-1: .*\/\.omx\/state\/team\/pane-team\/config\.json/);
       assert.match(output, /inspect_team_manifest_path_worker-1: .*\/\.omx\/state\/team\/pane-team\/manifest\.v2\.json/);
+      assert.match(output, /inspect_team_events_path_worker-1: .*\/\.omx\/state\/team\/pane-team\/events\/events\.ndjson/);
+      assert.match(output, /inspect_team_dispatch_path_worker-1: .*\/\.omx\/state\/team\/pane-team\/dispatch\/requests\.json/);
       assert.match(output, /inspect_pane_worker-1: %21/);
       assert.match(output, /inspect_pane_worker-2: %22/);
       assert.match(output, /inspect_next: omx sparkshell --tmux-pane %21 --tail-lines 400/);
       assert.match(output, /inspect_summary: target=worker-1 pane=%21 cli=codex role=executor alive=false turn_count=3 turns_without_progress=0 reason=dead_worker state=working task=1 subject=Recover worker-1 progress command=omx sparkshell --tmux-pane %21 --tail-lines 400/);
       assert.match(output, /inspect_priority_1: omx sparkshell --tmux-pane %21 --tail-lines 400/);
       assert.match(output, /inspect_priority_2: omx sparkshell --tmux-pane %22 --tail-lines 400/);
-      assert.match(output, /inspect_item_1: .*task_path=.*\/\.omx\/state\/team\/pane-team\/tasks\/task-1\.json .*approval_path=.*\/\.omx\/state\/team\/pane-team\/approvals\/task-1\.json .*worker_status_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-1\/status\.json .*worker_heartbeat_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-1\/heartbeat\.json .*worker_identity_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-1\/identity\.json .*worker_inbox_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-1\/inbox\.md .*worker_mailbox_path=.*\/\.omx\/state\/team\/pane-team\/mailbox\/worker-1\.json .*worker_shutdown_request_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-1\/shutdown-request\.json .*worker_shutdown_ack_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-1\/shutdown-ack\.json .*team_config_path=.*\/\.omx\/state\/team\/pane-team\/config\.json .*team_manifest_path=.*\/\.omx\/state\/team\/pane-team\/manifest\.v2\.json .*command=omx sparkshell --tmux-pane %21 --tail-lines 400/);
-      assert.match(output, /inspect_item_2: .*task_path=.*\/\.omx\/state\/team\/pane-team\/tasks\/task-2\.json .*approval_path=.*\/\.omx\/state\/team\/pane-team\/approvals\/task-2\.json .*worker_status_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-2\/status\.json .*worker_heartbeat_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-2\/heartbeat\.json .*worker_identity_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-2\/identity\.json .*worker_inbox_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-2\/inbox\.md .*worker_mailbox_path=.*\/\.omx\/state\/team\/pane-team\/mailbox\/worker-2\.json .*worker_shutdown_request_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-2\/shutdown-request\.json .*worker_shutdown_ack_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-2\/shutdown-ack\.json .*team_config_path=.*\/\.omx\/state\/team\/pane-team\/config\.json .*team_manifest_path=.*\/\.omx\/state\/team\/pane-team\/manifest\.v2\.json .*command=omx sparkshell --tmux-pane %22 --tail-lines 400/);
+      assert.match(output, /inspect_item_1: .*task_path=.*\/\.omx\/state\/team\/pane-team\/tasks\/task-1\.json .*approval_path=.*\/\.omx\/state\/team\/pane-team\/approvals\/task-1\.json .*worker_status_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-1\/status\.json .*worker_heartbeat_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-1\/heartbeat\.json .*worker_identity_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-1\/identity\.json .*worker_inbox_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-1\/inbox\.md .*worker_mailbox_path=.*\/\.omx\/state\/team\/pane-team\/mailbox\/worker-1\.json .*worker_shutdown_request_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-1\/shutdown-request\.json .*worker_shutdown_ack_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-1\/shutdown-ack\.json .*team_config_path=.*\/\.omx\/state\/team\/pane-team\/config\.json .*team_manifest_path=.*\/\.omx\/state\/team\/pane-team\/manifest\.v2\.json .*team_events_path=.*\/\.omx\/state\/team\/pane-team\/events\/events\.ndjson .*team_dispatch_path=.*\/\.omx\/state\/team\/pane-team\/dispatch\/requests\.json .*command=omx sparkshell --tmux-pane %21 --tail-lines 400/);
+      assert.match(output, /inspect_item_2: .*task_path=.*\/\.omx\/state\/team\/pane-team\/tasks\/task-2\.json .*approval_path=.*\/\.omx\/state\/team\/pane-team\/approvals\/task-2\.json .*worker_status_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-2\/status\.json .*worker_heartbeat_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-2\/heartbeat\.json .*worker_identity_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-2\/identity\.json .*worker_inbox_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-2\/inbox\.md .*worker_mailbox_path=.*\/\.omx\/state\/team\/pane-team\/mailbox\/worker-2\.json .*worker_shutdown_request_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-2\/shutdown-request\.json .*worker_shutdown_ack_path=.*\/\.omx\/state\/team\/pane-team\/workers\/worker-2\/shutdown-ack\.json .*team_config_path=.*\/\.omx\/state\/team\/pane-team\/config\.json .*team_manifest_path=.*\/\.omx\/state\/team\/pane-team\/manifest\.v2\.json .*team_events_path=.*\/\.omx\/state\/team\/pane-team\/events\/events\.ndjson .*team_dispatch_path=.*\/\.omx\/state\/team\/pane-team\/dispatch\/requests\.json .*command=omx sparkshell --tmux-pane %22 --tail-lines 400/);
       assert.match(output, /panes: leader=%10 hud=%11/);
       assert.match(output, /worker_panes: worker-1=%21 worker-2=%22/);
       assert.match(output, /sparkshell_hint: omx sparkshell --tmux-pane <pane-id> --tail-lines 400/);
@@ -1014,6 +1016,8 @@ describe('teamCommand status', () => {
           recommended_inspect_worker_shutdown_ack_paths?: Record<string, string | null>;
           recommended_inspect_team_config_paths?: Record<string, string | null>;
           recommended_inspect_team_manifest_paths?: Record<string, string | null>;
+          recommended_inspect_team_events_paths?: Record<string, string | null>;
+          recommended_inspect_team_dispatch_paths?: Record<string, string | null>;
           recommended_inspect_panes?: Record<string, string | null>;
           recommended_inspect_command?: string | null;
           recommended_inspect_commands?: string[];
@@ -1076,6 +1080,8 @@ describe('teamCommand status', () => {
             worker_shutdown_ack_path?: string | null;
             team_config_path?: string | null;
             team_manifest_path?: string | null;
+            team_events_path?: string | null;
+            team_dispatch_path?: string | null;
             command?: string;
           }>;
         };
@@ -1143,6 +1149,8 @@ describe('teamCommand status', () => {
       assert.deepEqual(payload.panes?.recommended_inspect_worker_shutdown_ack_paths, { 'worker-1': `${wd}/.omx/state/team/pane-json-team/workers/worker-1/shutdown-ack.json` });
       assert.deepEqual(payload.panes?.recommended_inspect_team_config_paths, { 'worker-1': `${wd}/.omx/state/team/pane-json-team/config.json` });
       assert.deepEqual(payload.panes?.recommended_inspect_team_manifest_paths, { 'worker-1': `${wd}/.omx/state/team/pane-json-team/manifest.v2.json` });
+      assert.deepEqual(payload.panes?.recommended_inspect_team_events_paths, { 'worker-1': `${wd}/.omx/state/team/pane-json-team/events/events.ndjson` });
+      assert.deepEqual(payload.panes?.recommended_inspect_team_dispatch_paths, { 'worker-1': `${wd}/.omx/state/team/pane-json-team/dispatch/requests.json` });
       assert.deepEqual(payload.panes?.recommended_inspect_panes, { 'worker-1': '%41' });
       assert.equal(payload.panes?.recommended_inspect_command, 'omx sparkshell --tmux-pane %41 --tail-lines 400');
       assert.deepEqual(payload.panes?.recommended_inspect_commands, ['omx sparkshell --tmux-pane %41 --tail-lines 400']);
@@ -1205,6 +1213,8 @@ describe('teamCommand status', () => {
         worker_shutdown_ack_path: `${wd}/.omx/state/team/pane-json-team/workers/worker-1/shutdown-ack.json`,
         team_config_path: `${wd}/.omx/state/team/pane-json-team/config.json`,
         team_manifest_path: `${wd}/.omx/state/team/pane-json-team/manifest.v2.json`,
+        team_events_path: `${wd}/.omx/state/team/pane-json-team/events/events.ndjson`,
+        team_dispatch_path: `${wd}/.omx/state/team/pane-json-team/dispatch/requests.json`,
         command: 'omx sparkshell --tmux-pane %41 --tail-lines 400',
       }]);
       assert.equal(payload.panes?.leader_pane_id, '%30');
