@@ -22,6 +22,10 @@ function envTruthy(key: string): boolean {
 }
 
 function isTmuxAllowed(): boolean {
+  // Compatibility quarantine: require explicit opt-in via OMX_COMPAT_TMUX
+  const compat = (process.env.OMX_COMPAT_TMUX || '').toLowerCase();
+  const compatEnabled = compat === '1' || compat === 'true' || compat === 'yes';
+  if (!compatEnabled) return false;
   if (envTruthy('OMX_NO_TMUX') || envTruthy('OMX_LAUNCH_NO_TMUX') || (process.env.OMX_LAUNCH_MODE || '').toLowerCase() === 'native') {
     return false;
   }

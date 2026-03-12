@@ -196,6 +196,13 @@ async function resolveActiveRalphState() {
 }
 
 async function emitRalphContinueSteer(paneId, message) {
+  // Respect compat gating: require explicit opt-in for tmux flows
+  const compat = String(process.env.OMX_COMPAT_TMUX || '').toLowerCase();
+  const compatEnabled = compat === '1' || compat === 'true' || compat === 'yes';
+  if (!compatEnabled || process.env.OMX_NO_TMUX === '1') {
+    await eventLog({ type: 'ralph_continue_steer', reason: compatEnabled ? 'env_no_tmux' : 'compat_disabled' });
+    throw new Error('tmux compat disabled');
+  }
   const markedText = `${message} ${DEFAULT_MARKER}`;
   await new Promise((resolve) => {
     const typed = spawnSync('tmux', ['send-keys', '-t', paneId, '-l', markedText], { encoding: 'utf-8' });
