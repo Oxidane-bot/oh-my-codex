@@ -578,6 +578,100 @@ sleep 5
     }
   });
 
+  it('startTeam recovers the project root from linked Ralph model instructions in prompt mode', async () => {
+    const linkedCwd = await mkdtemp(join(tmpdir(), 'omx-runtime-linked-ralph-shell-'));
+    const projectCwd = await mkdtemp(join(tmpdir(), 'omx-runtime-linked-ralph-project-'));
+    const binDir = join(projectCwd, 'bin');
+    const fakeCodexPath = join(binDir, 'codex');
+    const capturePath = join(projectCwd, 'worker-pwd.txt');
+    const instructionsPath = join(projectCwd, '.omx', 'state', 'sessions', 'sess-linked', 'AGENTS.md');
+
+    await mkdir(join(linkedCwd, '.omx', 'state'), { recursive: true });
+    await mkdir(join(projectCwd, '.omx', 'state', 'sessions', 'sess-linked'), { recursive: true });
+    await mkdir(binDir, { recursive: true });
+    await writeFile(join(projectCwd, 'AGENTS.md'), '# project\n');
+    await writeFile(instructionsPath, '# session\n');
+    await writeFile(
+      fakeCodexPath,
+      `#!/usr/bin/env node
+const fs = require('fs');
+fs.writeFileSync(process.env.OMX_LINKED_RALPH_PWD_CAPTURE_PATH, \`pwd=\${process.cwd()}\\n\`);
+process.stdin.resume();
+setTimeout(() => process.exit(0), 5000);
+process.on('SIGTERM', () => process.exit(0));
+`,
+      { mode: 0o755 },
+    );
+
+    const prevPath = process.env.PATH;
+    const prevTmux = process.env.TMUX;
+    const prevLaunchMode = process.env.OMX_TEAM_WORKER_LAUNCH_MODE;
+    const prevWorkerCli = process.env.OMX_TEAM_WORKER_CLI;
+    const prevInstructions = process.env.OMX_MODEL_INSTRUCTIONS_FILE;
+    const prevCapture = process.env.OMX_LINKED_RALPH_PWD_CAPTURE_PATH;
+
+    process.env.PATH = `${binDir}:${prevPath ?? ''}`;
+    delete process.env.TMUX;
+    process.env.OMX_TEAM_WORKER_LAUNCH_MODE = 'prompt';
+    process.env.OMX_TEAM_WORKER_CLI = 'codex';
+    process.env.OMX_MODEL_INSTRUCTIONS_FILE = instructionsPath;
+    process.env.OMX_LINKED_RALPH_PWD_CAPTURE_PATH = capturePath;
+
+    let runtime: TeamRuntime | null = null;
+    try {
+      runtime = await withoutTeamWorkerEnv(() =>
+        startTeam(
+          'fix-all',
+          'linked Ralph project root recovery',
+          'executor',
+          1,
+          [{ subject: 's', description: 'd', owner: 'worker-1' }],
+          linkedCwd,
+          { ralph: true },
+        ));
+
+      assert.equal(runtime.cwd, projectCwd);
+      assert.equal(runtime.config.leader_cwd, projectCwd);
+      assert.equal(runtime.config.workers[0]?.working_dir, projectCwd);
+      assert.equal(existsSync(join(linkedCwd, '.omx', 'state', 'team', 'fix-all')), false);
+      assert.equal(existsSync(join(projectCwd, '.omx', 'state', 'team', 'fix-all')), true);
+
+      const identity = JSON.parse(await readFile(
+        join(projectCwd, '.omx', 'state', 'team', 'fix-all', 'workers', 'worker-1', 'identity.json'),
+        'utf-8',
+      )) as { working_dir?: string; team_state_root?: string };
+      assert.equal(identity.working_dir, projectCwd);
+      assert.equal(identity.team_state_root, join(projectCwd, '.omx', 'state'));
+
+      const capture = await waitForFileText(
+        capturePath,
+        (content) => content.includes(`pwd=${projectCwd}`),
+      );
+      assert.equal(capture.trim(), `pwd=${projectCwd}`);
+
+      await shutdownTeam(runtime.teamName, projectCwd, { force: true, ralph: true });
+      runtime = null;
+    } finally {
+      if (runtime) {
+        await shutdownTeam(runtime.teamName, projectCwd, { force: true, ralph: true }).catch(() => {});
+      }
+      if (typeof prevPath === 'string') process.env.PATH = prevPath;
+      else delete process.env.PATH;
+      if (typeof prevTmux === 'string') process.env.TMUX = prevTmux;
+      else delete process.env.TMUX;
+      if (typeof prevLaunchMode === 'string') process.env.OMX_TEAM_WORKER_LAUNCH_MODE = prevLaunchMode;
+      else delete process.env.OMX_TEAM_WORKER_LAUNCH_MODE;
+      if (typeof prevWorkerCli === 'string') process.env.OMX_TEAM_WORKER_CLI = prevWorkerCli;
+      else delete process.env.OMX_TEAM_WORKER_CLI;
+      if (typeof prevInstructions === 'string') process.env.OMX_MODEL_INSTRUCTIONS_FILE = prevInstructions;
+      else delete process.env.OMX_MODEL_INSTRUCTIONS_FILE;
+      if (typeof prevCapture === 'string') process.env.OMX_LINKED_RALPH_PWD_CAPTURE_PATH = prevCapture;
+      else delete process.env.OMX_LINKED_RALPH_PWD_CAPTURE_PATH;
+      await rm(linkedCwd, { recursive: true, force: true });
+      await rm(projectCwd, { recursive: true, force: true });
+    }
+  });
+
   it('startTeam launches gemini workers with startup prompt and no default model passthrough', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'omx-runtime-gemini-'));
     const binDir = join(cwd, 'bin');

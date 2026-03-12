@@ -10,7 +10,7 @@ use std::fmt::Write as _;
 use std::fs;
 use std::fs::File;
 use std::io::{self, Write as IoWrite};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -103,6 +103,7 @@ const TEAM_API_HELP: &str = concat!(
 const DEFAULT_TEAM_WORKER_COUNT: usize = 3;
 const DEFAULT_TEAM_MAX_WORKERS: usize = 20;
 const DEFAULT_TEAM_DISPATCH_ACK_TIMEOUT_MS: u64 = 3000;
+const MODEL_INSTRUCTIONS_FILE_ENV: &str = "OMX_MODEL_INSTRUCTIONS_FILE";
 
 struct ParsedTeamStartArgs {
     linked_ralph: bool,
@@ -194,7 +195,8 @@ fn run_team_start(
     env: &BTreeMap<OsString, OsString>,
 ) -> Result<TeamExecution, TeamError> {
     let parsed = parse_team_start_args(args)?;
-    let team_root = team_root(cwd, &parsed.team_name);
+    let effective_cwd = resolve_team_start_cwd(cwd, env);
+    let team_root = team_root(&effective_cwd, &parsed.team_name);
     if team_root.exists() {
         return Err(TeamError::runtime(format!(
             "Team state already exists for {}",
@@ -202,11 +204,11 @@ fn run_team_start(
         )));
     }
 
-    initialize_team_state(&team_root, &parsed, cwd, env)?;
+    initialize_team_state(&team_root, &parsed, &effective_cwd, env)?;
     let summary = summarize_tasks(&team_root.join("tasks"))?;
     let layout = sync_prompt_layout_if_available(
         &team_root,
-        cwd,
+        &effective_cwd,
         "spawn",
         HudModeOverride::Inline,
         Some(env),
@@ -236,6 +238,65 @@ fn run_team_start(
         summary.failed
     );
     Ok(stdout_only(&stdout))
+}
+
+fn resolve_team_start_cwd(cwd: &Path, env: &BTreeMap<OsString, OsString>) -> PathBuf {
+    if !cwd_looks_like_state_only_link(cwd) {
+        return cwd.to_path_buf();
+    }
+
+    let Some(instructions_path) = env.get(&OsString::from(MODEL_INSTRUCTIONS_FILE_ENV)) else {
+        return cwd.to_path_buf();
+    };
+    let Some(workspace_root) =
+        infer_workspace_root_from_model_instructions(Path::new(instructions_path.as_os_str()))
+    else {
+        return cwd.to_path_buf();
+    };
+
+    if workspace_root != cwd && path_has_project_markers(&workspace_root) {
+        workspace_root
+    } else {
+        cwd.to_path_buf()
+    }
+}
+
+fn cwd_looks_like_state_only_link(cwd: &Path) -> bool {
+    if !cwd.join(".omx").exists() || path_has_project_markers(cwd) {
+        return false;
+    }
+
+    let Ok(entries) = fs::read_dir(cwd) else {
+        return false;
+    };
+
+    entries
+        .filter_map(Result::ok)
+        .all(|entry| entry.file_name() == OsString::from(".omx"))
+}
+
+fn path_has_project_markers(path: &Path) -> bool {
+    path.join(".git").exists()
+        || path.join("src").exists()
+        || [
+            "AGENTS.md",
+            "package.json",
+            "Cargo.toml",
+            "pyproject.toml",
+            "go.mod",
+            "README.md",
+        ]
+        .iter()
+        .any(|marker| path.join(marker).exists())
+}
+
+fn infer_workspace_root_from_model_instructions(path: &Path) -> Option<PathBuf> {
+    for ancestor in path.ancestors() {
+        if ancestor.file_name().is_some_and(|name| name == ".omx") {
+            return ancestor.parent().map(Path::to_path_buf);
+        }
+    }
+    None
 }
 
 fn parse_team_start_args(args: &[String]) -> Result<ParsedTeamStartArgs, TeamError> {
@@ -4709,6 +4770,95 @@ mod tests {
         let events = fs::read_to_string(cwd.join(".omx/state/team/fix-all/events/events.ndjson"))
             .expect("read events");
         assert!(events.contains("linked_ralph_bootstrap"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linked_ralph_team_start_recovers_project_root_from_model_instructions() {
+        let linked_cwd = temp_dir("linked-ralph-shell");
+        let project_cwd = temp_dir("linked-ralph-project");
+        fs::create_dir_all(linked_cwd.join(".omx/state")).expect("create linked state root");
+        fs::write(project_cwd.join("AGENTS.md"), "# project\n").expect("write project agents");
+        fs::create_dir_all(project_cwd.join(".omx/state/sessions/sess-linked"))
+            .expect("create project session dir");
+        let instructions_path = project_cwd.join(".omx/state/sessions/sess-linked/AGENTS.md");
+        fs::write(&instructions_path, "# session\n").expect("write instructions file");
+
+        let worker_cli = project_cwd.join("capture-worker.sh");
+        let capture_path = project_cwd.join("worker-pwd.txt");
+        fs::write(
+            &worker_cli,
+            format!(
+                concat!(
+                    "#!/bin/sh\n",
+                    "printf 'pwd=%s\\n' \"$PWD\" > \"{}\"\n",
+                    "trap 'exit 0' TERM INT\n",
+                    "while true; do sleep 1; done\n"
+                ),
+                capture_path.display()
+            ),
+        )
+        .expect("write worker cli");
+        let mut perms = fs::metadata(&worker_cli).expect("metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&worker_cli, perms).expect("chmod");
+
+        let env = BTreeMap::from([
+            (
+                OsString::from("OMX_MODEL_INSTRUCTIONS_FILE"),
+                instructions_path.as_os_str().to_os_string(),
+            ),
+            (
+                OsString::from("OMX_TEAM_WORKER_CLI"),
+                worker_cli.as_os_str().to_os_string(),
+            ),
+        ]);
+
+        let result = run_team(
+            &[
+                "ralph".to_string(),
+                "1:executor".to_string(),
+                "fix".to_string(),
+                "all".to_string(),
+            ],
+            &linked_cwd,
+            &env,
+        )
+        .expect("team start");
+        let stdout = String::from_utf8(result.stdout).expect("utf8");
+        assert!(stdout.contains("Team started: fix-all"));
+        assert!(stdout.contains("linked_ralph=true"));
+
+        assert!(!linked_cwd.join(".omx/state/team/fix-all").exists());
+        assert!(project_cwd.join(".omx/state/team/fix-all").exists());
+
+        let config = fs::read_to_string(project_cwd.join(".omx/state/team/fix-all/config.json"))
+            .expect("read config");
+        assert!(config.contains(&format!("\"leader_cwd\": \"{}\"", project_cwd.display())));
+
+        let identity = fs::read_to_string(
+            project_cwd.join(".omx/state/team/fix-all/workers/worker-1/identity.json"),
+        )
+        .expect("read identity");
+        assert!(identity.contains(&format!("\"working_dir\":\"{}\"", project_cwd.display())));
+
+        let deadline = Instant::now() + Duration::from_millis(2000);
+        while Instant::now() < deadline && !capture_path.exists() {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let capture = fs::read_to_string(&capture_path).expect("capture pwd");
+        assert!(capture.contains(&format!("pwd={}", project_cwd.display())));
+
+        run_team(
+            &[
+                "shutdown".to_string(),
+                "fix-all".to_string(),
+                "--force".to_string(),
+            ],
+            &project_cwd,
+            &BTreeMap::new(),
+        )
+        .expect("shutdown");
     }
 
     #[cfg(unix)]

@@ -1,4 +1,4 @@
-import { dirname, join, resolve } from 'path';
+import { basename, dirname, join, resolve } from 'path';
 import { existsSync } from 'fs';
 import { readdir, readFile } from 'fs/promises';
 import { performance } from 'perf_hooks';
@@ -335,6 +335,55 @@ const previousModelInstructionsFileByTeam = new Map<string, string | undefined>(
 const PROMPT_WORKER_SIGTERM_WAIT_MS = 3_000;
 const PROMPT_WORKER_SIGKILL_WAIT_MS = 2_000;
 const PROMPT_WORKER_EXIT_POLL_MS = 100;
+
+function pathHasProjectMarkers(path: string): boolean {
+  if (existsSync(join(path, '.git')) || existsSync(join(path, 'src'))) return true;
+  return [
+    'AGENTS.md',
+    'package.json',
+    'Cargo.toml',
+    'pyproject.toml',
+    'go.mod',
+    'README.md',
+  ].some((marker) => existsSync(join(path, marker)));
+}
+
+async function cwdLooksLikeStateOnlyLink(cwd: string): Promise<boolean> {
+  if (!existsSync(join(cwd, '.omx')) || pathHasProjectMarkers(cwd)) return false;
+  try {
+    const entries = await readdir(cwd);
+    return entries.every((entry) => entry === '.omx');
+  } catch {
+    return false;
+  }
+}
+
+function inferWorkspaceRootFromModelInstructions(path: string): string | null {
+  let current = resolve(path);
+  while (true) {
+    if (basename(current) === '.omx') {
+      return dirname(current);
+    }
+    const parent = dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
+async function resolveTeamStartLeaderCwd(cwd: string, env: NodeJS.ProcessEnv): Promise<string> {
+  const resolvedCwd = resolve(cwd);
+  if (!(await cwdLooksLikeStateOnlyLink(resolvedCwd))) return resolvedCwd;
+
+  const instructionsPath = env[MODEL_INSTRUCTIONS_FILE_ENV];
+  if (typeof instructionsPath !== 'string' || instructionsPath.trim() === '') return resolvedCwd;
+
+  const workspaceRoot = inferWorkspaceRootFromModelInstructions(instructionsPath);
+  if (!workspaceRoot || workspaceRoot === resolvedCwd || !pathHasProjectMarkers(workspaceRoot)) {
+    return resolvedCwd;
+  }
+
+  return workspaceRoot;
+}
 
 function resolveInstructionStateRoot(worktreePath?: string | null): string | undefined {
   return worktreePath ? WORKTREE_TRIGGER_STATE_ROOT : undefined;
@@ -723,7 +772,7 @@ export async function startTeam(
     }
   }
 
-  const leaderCwd = resolve(cwd);
+  const leaderCwd = await resolveTeamStartLeaderCwd(cwd, launchEnv);
   const sanitized = sanitizeTeamName(teamName);
   const teamStateRoot = resolveCanonicalTeamStateRoot(leaderCwd);
   const activeWorktreeMode: 'detached' | 'named' | null =
