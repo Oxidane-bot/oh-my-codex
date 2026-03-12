@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -84,6 +84,28 @@ exit 0
 }
 
 describe('notify-hook team dispatch consumer', () => {
+  const originalTeamWorker = process.env.OMX_TEAM_WORKER;
+  const originalTeamStateRoot = process.env.OMX_TEAM_STATE_ROOT;
+
+  before(() => {
+    delete process.env.OMX_TEAM_WORKER;
+    delete process.env.OMX_TEAM_STATE_ROOT;
+  });
+
+  after(() => {
+    if (originalTeamWorker === undefined) {
+      delete process.env.OMX_TEAM_WORKER;
+    } else {
+      process.env.OMX_TEAM_WORKER = originalTeamWorker;
+    }
+
+    if (originalTeamStateRoot === undefined) {
+      delete process.env.OMX_TEAM_STATE_ROOT;
+    } else {
+      process.env.OMX_TEAM_STATE_ROOT = originalTeamStateRoot;
+    }
+  });
+
   it('marks pending request as notified and preserves mailbox notified_at semantics', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'omx-hook-team-dispatch-'));
     try {
@@ -497,15 +519,16 @@ describe('notify-hook team dispatch consumer', () => {
       await mkdir(fakeBinDir, { recursive: true });
       await writeFile(join(fakeBinDir, 'tmux'), buildFakeTmux(tmuxLogPath));
       await chmod(join(fakeBinDir, 'tmux'), 0o755);
-      // Each verify round now does narrow + wide capture (2 calls per round).
-      // Pre-capture on retries returns 'ready' (no trigger) to allow retype.
+      // Shared preflight now adds one 80-line capture per tick before the
+      // narrow retry check. Pre-capture on retries still returns "ready"
+      // (no trigger) so the request is retyped on every retry.
       await writeFile(captureSeqFile, [
-        // tick1: 3 verify rounds × 2 captures = 6
-        'ping', 'ping', 'ping', 'ping', 'ping', 'ping',
-        // tick2: 1 pre-capture + 3 verify rounds × 2 captures = 7
+        // tick1: 1 shared preflight + 3 verify rounds × 2 captures = 7
         'ready', 'ping', 'ping', 'ping', 'ping', 'ping', 'ping',
-        // tick3: 1 pre-capture + 3 verify rounds × 2 captures = 7
-        'ready', 'ping', 'ping', 'ping', 'ping', 'ping', 'ping',
+        // tick2: 1 shared preflight + 1 pre-capture + 3 verify rounds × 2 captures = 8
+        'ready', 'ready', 'ping', 'ping', 'ping', 'ping', 'ping', 'ping',
+        // tick3: 1 shared preflight + 1 pre-capture + 3 verify rounds × 2 captures = 8
+        'ready', 'ready', 'ping', 'ping', 'ping', 'ping', 'ping', 'ping',
       ].join('\n'));
       process.env.PATH = `${fakeBinDir}:${previousPath || ''}`;
       process.env.OMX_TEST_CAPTURE_SEQUENCE_FILE = captureSeqFile;

@@ -4,9 +4,9 @@ import { dirname, join, resolve } from 'path';
 import { safeString } from './utils.js';
 import { runProcess } from './process-runner.js';
 import { resolvePaneTarget } from './tmux-injection.js';
+import { evaluatePaneInjectionReadiness, sendPaneInput } from './team-tmux-guard.js';
 import {
   buildCapturePaneArgv,
-  buildPaneInModeArgv,
   buildSendKeysArgv,
   normalizeTmuxCapture,
   paneHasActiveTask,
@@ -297,13 +297,14 @@ async function injectDispatchRequest(request, config, cwd) {
   if (!resolution.paneTarget) {
     return { ok: false, reason: `target_resolution_failed:${resolution.reason}` };
   }
-  try {
-    const inMode = await runProcess('tmux', buildPaneInModeArgv(resolution.paneTarget), 1000);
-    if (safeString(inMode.stdout).trim() === '1') {
-      return { ok: false, reason: 'scroll_active' };
-    }
-  } catch {
-    // best effort
+  const paneGuard = await evaluatePaneInjectionReadiness(resolution.paneTarget, {
+    skipIfScrolling: true,
+    requireRunningAgent: false,
+    requireReady: false,
+    requireIdle: false,
+  });
+  if (!paneGuard.ok) {
+    return { ok: false, reason: paneGuard.reason };
   }
 
   const argv = buildSendKeysArgv({
@@ -336,7 +337,14 @@ async function injectDispatchRequest(request, config, cwd) {
       await runProcess('tmux', ['send-keys', '-t', resolution.paneTarget, 'C-u'], 1000).catch(() => {});
       await new Promise((r) => setTimeout(r, 50));
     }
-    await runProcess('tmux', argv.typeArgv, 3000);
+    const typeResult = await sendPaneInput({
+      paneTarget: resolution.paneTarget,
+      prompt: request.trigger_message,
+      submitKeyPresses: 0,
+    });
+    if (!typeResult.ok) {
+      return { ok: false, reason: typeResult.reason };
+    }
   }
 
   for (const submit of argv.submitArgv) {
@@ -389,7 +397,8 @@ async function injectDispatchRequest(request, config, cwd) {
 
 function shouldSkipRequest(request) {
   if (request.status !== 'pending') return true;
-  return request.transport_preference !== 'hook_preferred_with_fallback';
+  const preference = safeString(request.transport_preference).trim();
+  return preference !== '' && preference !== 'hook_preferred_with_fallback';
 }
 
 async function updateMailboxNotified(stateDir, teamName, workerName, messageId) {

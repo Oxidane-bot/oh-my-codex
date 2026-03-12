@@ -724,15 +724,16 @@ describe('notify-fallback watcher', () => {
       await mkdir(fakeBinDir, { recursive: true });
       await writeFile(join(fakeBinDir, 'tmux'), buildFakeTmux(tmuxLogPath));
       await chmod(join(fakeBinDir, 'tmux'), 0o755);
-      // Verify loop uses 2 captures/round (narrow+wide) × 3 rounds = 6 per attempt.
-      // Pre-capture on retries adds 1 more. "ready" = no trigger in narrow area → retype.
+      // Shared preflight now adds one 80-line capture per tick before the
+      // narrow retry check. Pre-capture on retries still returns "ready"
+      // (no trigger) so the request is retyped on every retry.
       await writeFile(captureSeqFile, [
-        // Run 1 (attempt 0): no pre-capture, type, 6 verify captures
-        'dispatch ping', 'dispatch ping', 'dispatch ping', 'dispatch ping', 'dispatch ping', 'dispatch ping',
-        // Run 2 (attempt 1): 1 pre-capture ("ready" → retype), 6 verify captures
+        // Run 1 (attempt 0): 1 shared preflight + 3 verify rounds × 2 captures = 7
         'ready', 'dispatch ping', 'dispatch ping', 'dispatch ping', 'dispatch ping', 'dispatch ping', 'dispatch ping',
-        // Run 3 (attempt 2): 1 pre-capture ("ready" → retype), 6 verify captures
-        'ready', 'dispatch ping', 'dispatch ping', 'dispatch ping', 'dispatch ping', 'dispatch ping', 'dispatch ping',
+        // Run 2 (attempt 1): 1 shared preflight + 1 pre-capture + 3 verify rounds × 2 captures = 8
+        'ready', 'ready', 'dispatch ping', 'dispatch ping', 'dispatch ping', 'dispatch ping', 'dispatch ping', 'dispatch ping',
+        // Run 3 (attempt 2): 1 shared preflight + 1 pre-capture + 3 verify rounds × 2 captures = 8
+        'ready', 'ready', 'dispatch ping', 'dispatch ping', 'dispatch ping', 'dispatch ping', 'dispatch ping', 'dispatch ping',
       ].join('\n'));
 
       await initTeamState('dispatch-team', 'task', 'executor', 1, wd);

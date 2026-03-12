@@ -9,7 +9,7 @@ import { asNumber, safeString, isTerminalPhase } from './utils.js';
 import { readJsonIfExists, getScopedStateDirsForCurrentSession } from './state-io.js';
 import { runProcess } from './process-runner.js';
 import { logTmuxHookEvent } from './log.js';
-import { checkPaneReadyForTeamSendKeys } from './team-tmux-guard.js';
+import { evaluatePaneInjectionReadiness, sendPaneInput } from './team-tmux-guard.js';
 import { DEFAULT_MARKER } from '../tmux-hook-engine.js';
 const LEADER_PANE_MISSING_NO_INJECTION_REASON = 'leader_pane_missing_no_injection';
 const LEADER_PANE_SHELL_NO_INJECTION_REASON = 'leader_pane_shell_no_injection';
@@ -659,13 +659,16 @@ export async function maybeNudgeTeamLeader({ cwd, stateDir, logsDir, preComputed
       continue;
     }
 
-    const paneGuard = await checkPaneReadyForTeamSendKeys(tmuxTarget);
+    const paneGuard = await evaluatePaneInjectionReadiness(tmuxTarget, { skipIfScrolling: true });
     if (!paneGuard.ok) {
+      const deferredReason = paneGuard.reason === 'pane_running_shell'
+        ? LEADER_PANE_SHELL_NO_INJECTION_REASON
+        : paneGuard.reason;
       nudgeState.last_nudged_by_team[teamName] = { at: nowIso, last_message_id: newestId || prevMsgId || '', reason: nudgeReason };
       if (shouldSendAllIdleNudge) {
         nudgeState.last_idle_nudged_by_team[teamName] = { at: nowIso, worker_count: workerNames.length };
       }
-      await emitLeaderNudgeDeferredEvent(cwd, teamName, LEADER_PANE_SHELL_NO_INJECTION_REASON, nowIso, {
+      await emitLeaderNudgeDeferredEvent(cwd, teamName, deferredReason, nowIso, {
         tmuxSession,
         leaderPaneId,
         paneCurrentCommand: paneGuard.paneCurrentCommand,
@@ -678,11 +681,12 @@ export async function maybeNudgeTeamLeader({ cwd, stateDir, logsDir, preComputed
           team: teamName,
           worker: 'leader-fixed',
           to_worker: 'leader-fixed',
-          reason: LEADER_PANE_SHELL_NO_INJECTION_REASON,
+          reason: deferredReason,
           leader_pane_id: leaderPaneId || null,
           tmux_session: tmuxSession || null,
           tmux_injection_attempted: false,
           pane_current_command: paneGuard.paneCurrentCommand || null,
+          injection_skip_reason: paneGuard.reason,
           source_type: 'leader_nudge',
         });
       } catch { /* ignore */ }
@@ -690,11 +694,15 @@ export async function maybeNudgeTeamLeader({ cwd, stateDir, logsDir, preComputed
     }
 
     try {
-      await runProcess('tmux', ['send-keys', '-t', tmuxTarget, '-l', markedText], 3000);
-      await new Promise(r => setTimeout(r, 100));
-      await runProcess('tmux', ['send-keys', '-t', tmuxTarget, 'C-m'], 3000);
-      await new Promise(r => setTimeout(r, 100));
-      await runProcess('tmux', ['send-keys', '-t', tmuxTarget, 'C-m'], 3000);
+      const sendResult = await sendPaneInput({
+        paneTarget: tmuxTarget,
+        prompt: markedText,
+        submitKeyPresses: 2,
+        submitDelayMs: 100,
+      });
+      if (!sendResult.ok) {
+        throw new Error(sendResult.error || sendResult.reason);
+      }
       nudgeState.last_nudged_by_team[teamName] = { at: nowIso, last_message_id: newestId || prevMsgId || '', reason: nudgeReason };
       if (shouldSendAllIdleNudge) {
         nudgeState.last_idle_nudged_by_team[teamName] = { at: nowIso, worker_count: workerNames.length };
