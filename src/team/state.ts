@@ -95,6 +95,7 @@ export interface WorkerInfo {
   assigned_tasks: string[]; // task IDs
   pid?: number;
   pane_id?: string;
+  transcript_path?: string;
   working_dir?: string;
   worktree_repo_root?: string;
   worktree_path?: string;

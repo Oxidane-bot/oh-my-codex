@@ -1,9 +1,9 @@
 import { basename, dirname, join, resolve } from 'path';
-import { existsSync } from 'fs';
+import { createWriteStream, existsSync } from 'fs';
 import { readdir, readFile } from 'fs/promises';
 import { performance } from 'perf_hooks';
 import { spawn, type ChildProcessByStdio } from 'child_process';
-import type { Writable } from 'stream';
+import type { Readable, Writable } from 'stream';
 import {
   sanitizeTeamName,
   isTmuxAvailable,
@@ -326,7 +326,7 @@ const STARTUP_EVIDENCE_TIMEOUT_MS = 2_000;
 const STARTUP_EVIDENCE_POLL_MS = 100;
 
 interface PromptWorkerHandle {
-  child: ChildProcessByStdio<Writable, null, null>;
+  child: ChildProcessByStdio<Writable, Readable, Readable>;
   pid: number;
 }
 
@@ -460,6 +460,10 @@ function shouldSkipWorkerReadyWait(env: NodeJS.ProcessEnv): boolean {
   return env.OMX_TEAM_SKIP_READY_WAIT === '1';
 }
 
+function resolvePromptWorkerTranscriptPath(cwd: string, teamName: string, workerName: string): string {
+  return join(cwd, '.omx', 'state', 'team', teamName, 'workers', workerName, 'transcript.log');
+}
+
 function setTeamModelInstructionsFile(teamName: string, filePath: string): void {
   if (!previousModelInstructionsFileByTeam.has(teamName)) {
     previousModelInstructionsFileByTeam.set(teamName, process.env[MODEL_INSTRUCTIONS_FILE_ENV]);
@@ -483,7 +487,7 @@ function restoreTeamModelInstructionsFile(teamName: string): void {
 function registerPromptWorkerHandle(
   teamName: string,
   workerName: string,
-  child: ChildProcessByStdio<Writable, null, null>,
+  child: ChildProcessByStdio<Writable, Readable, Readable>,
 ): void {
   const { pid } = child;
   if (!Number.isFinite(pid) || (pid ?? 0) < 1) {
@@ -636,6 +640,7 @@ export { TEAM_LOW_COMPLEXITY_DEFAULT_MODEL };
 export { resolveCanonicalTeamStateRoot };
 
 function spawnPromptWorker(
+  leaderCwd: string,
   teamName: string,
   workerName: string,
   workerIndex: number,
@@ -645,7 +650,7 @@ function spawnPromptWorker(
   workerEnv: Record<string, string>,
   workerCli: 'codex' | 'claude' | 'gemini',
   initialPrompt?: string,
-): ChildProcessByStdio<Writable, null, null> {
+): ChildProcessByStdio<Writable, Readable, Readable> {
   const processSpec = buildWorkerProcessLaunchSpec(
     teamName,
     workerIndex,
@@ -661,9 +666,17 @@ function spawnPromptWorker(
     {
       cwd: workerCwd,
       env: { ...parentEnv, ...processSpec.env },
-      stdio: ['pipe', 'ignore', 'ignore'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     },
   );
+  const transcript = createWriteStream(resolvePromptWorkerTranscriptPath(leaderCwd, teamName, workerName), { flags: 'a' });
+  transcript.write(`[${new Date().toISOString()}] worker=${workerName} cli=${workerCli} event=spawn\n`);
+  child.stdout.pipe(transcript, { end: false });
+  child.stderr.pipe(transcript, { end: false });
+  child.on('exit', (code, signal) => {
+    transcript.write(`\n[${new Date().toISOString()}] worker=${workerName} event=exit code=${code ?? 'null'} signal=${signal ?? 'null'}\n`);
+    transcript.end();
+  });
   registerPromptWorkerHandle(teamName, workerName, child);
   return child;
 }
@@ -1012,6 +1025,7 @@ export async function startTeam(
         const startup = workerStartups[i - 1] || {};
         const workerName = `worker-${i}`;
         const child = spawnPromptWorker(
+          leaderCwd,
           sanitized,
           workerName,
           i,
@@ -1074,10 +1088,12 @@ export async function startTeam(
         if (panePid) identity.pid = panePid;
       } else if (config.workers[i - 1]?.pid) {
         identity.pid = config.workers[i - 1].pid;
+        identity.transcript_path = resolvePromptWorkerTranscriptPath(leaderCwd, sanitized, workerName);
       }
       if (paneId) identity.pane_id = paneId;
       if (config.workers[i - 1]) {
         config.workers[i - 1].pane_id = paneId;
+        config.workers[i - 1].transcript_path = identity.transcript_path;
         config.workers[i - 1].role = workerRole;
         config.workers[i - 1].worker_cli = workerCliPlan[i - 1];
         config.workers[i - 1].working_dir = workerWorkspace.cwd;

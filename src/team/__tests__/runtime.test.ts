@@ -840,6 +840,78 @@ process.on('SIGTERM', () => process.exit(0));
     }
   });
 
+  it('startTeam captures prompt worker stdout and stderr into a transcript file', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'omx-runtime-prompt-transcript-'));
+    const binDir = join(cwd, 'bin');
+    const fakeCodexPath = join(binDir, 'codex');
+    await mkdir(binDir, { recursive: true });
+    await writeFile(
+      fakeCodexPath,
+      `#!/usr/bin/env node
+process.stdout.write('worker-stdout-ready\\n');
+process.stderr.write('worker-stderr-ready\\n');
+process.stdin.resume();
+setTimeout(() => process.exit(0), 5000);
+process.on('SIGTERM', () => process.exit(0));
+`,
+      { mode: 0o755 },
+    );
+
+    const prevPath = process.env.PATH;
+    const prevTmux = process.env.TMUX;
+    const prevLaunchMode = process.env.OMX_TEAM_WORKER_LAUNCH_MODE;
+    const prevWorkerCli = process.env.OMX_TEAM_WORKER_CLI;
+
+    process.env.PATH = `${binDir}:${prevPath ?? ''}`;
+    delete process.env.TMUX;
+    process.env.OMX_TEAM_WORKER_LAUNCH_MODE = 'prompt';
+    process.env.OMX_TEAM_WORKER_CLI = 'codex';
+
+    let runtime: TeamRuntime | null = null;
+    try {
+      runtime = await withoutTeamWorkerEnv(() =>
+        startTeam(
+          'team-prompt-transcript',
+          'prompt transcript capture',
+          'executor',
+          1,
+          [{ subject: 's', description: 'd', owner: 'worker-1' }],
+          cwd,
+        ));
+
+      const transcriptPath = runtime.config.workers[0]?.transcript_path;
+      assert.ok(transcriptPath, 'prompt worker transcript path should be recorded');
+      const transcript = await waitForFileText(
+        transcriptPath!,
+        (content) => content.includes('worker-stdout-ready') && content.includes('worker-stderr-ready'),
+      );
+      assert.match(transcript, /worker-stdout-ready/);
+      assert.match(transcript, /worker-stderr-ready/);
+
+      const identity = JSON.parse(await readFile(
+        join(cwd, '.omx', 'state', 'team', 'team-prompt-transcript', 'workers', 'worker-1', 'identity.json'),
+        'utf-8',
+      )) as { transcript_path?: string };
+      assert.equal(identity.transcript_path, transcriptPath);
+
+      await shutdownTeam(runtime.teamName, cwd, { force: true });
+      runtime = null;
+    } finally {
+      if (runtime) {
+        await shutdownTeam(runtime.teamName, cwd, { force: true }).catch(() => {});
+      }
+      if (typeof prevPath === 'string') process.env.PATH = prevPath;
+      else delete process.env.PATH;
+      if (typeof prevTmux === 'string') process.env.TMUX = prevTmux;
+      else delete process.env.TMUX;
+      if (typeof prevLaunchMode === 'string') process.env.OMX_TEAM_WORKER_LAUNCH_MODE = prevLaunchMode;
+      else delete process.env.OMX_TEAM_WORKER_LAUNCH_MODE;
+      if (typeof prevWorkerCli === 'string') process.env.OMX_TEAM_WORKER_CLI = prevWorkerCli;
+      else delete process.env.OMX_TEAM_WORKER_CLI;
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
 
   it('startTeam preserves routed task roles into team state and worker launch args', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'omx-runtime-role-routing-'));
