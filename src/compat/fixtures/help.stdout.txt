@@ -52,4 +52,3 @@ Options:
   --verbose     Show detailed output
   --scope       Setup scope for "omx setup" only:
                 user | project
-

@@ -34,11 +34,12 @@ Operational runtime for [OpenAI Codex CLI](https://github.com/openai/codex).
 - [Français (French)](./README.fr.md)
 - [Italiano (Italian)](./README.it.md)
 
-OMX turns Codex into an operational runtime for real multi-step work:
-- **Team Mode first** — coordinated multi-agent execution with shared visibility, resume, recovery, and lifecycle control
-- **Role prompts + skills** — productized behaviors for planners, executors, reviewers, and reusable workflows
-- **Persistent runtime state** — MCP-backed state, memory, mailbox, plans, and diagnostics in `.omx/`
-- **Operator controls** — launch, inspect, verify, cancel, and resume long-running work without replacing Codex itself
+
+OMX turns Codex from a single-session agent into a coordinated system with:
+- Role prompts (`/prompts:name`) for specialized agents
+- Workflow skills (`$name`) for repeatable execution modes
+- Team orchestration (`omx team`, `$team`) with prompt-mode workers as the normal path and tmux-backed flows where explicitly needed
+- Persistent state + memory via MCP servers
 
 ## Why OMX
 
@@ -48,14 +49,19 @@ That matters because orchestration is not just fanout. It needs durable state, s
 
 OMX keeps Codex as the execution engine and adds the runtime around it.
 
-## Runtime model
+OMX is best used as an **outer CLI orchestration layer**:
+- **Control plane (CLI/runtime):** `omx team`, prompt/tmux worker orchestration, lifecycle commands
+- **Capability/state plane (MCP):** task state, mailbox, memory, diagnostics tools
 
 OMX is a small operational runtime layered around Codex:
 - **Execution plane:** Codex runs the actual agent work
 - **Control plane:** `omx` manages team workers, lifecycle commands, HUD/tmux integration, and recovery
 - **State plane:** MCP servers back state, mailbox, memory, diagnostics, and project context
 
-This keeps the stack simple: Codex stays in the loop, while OMX makes the work inspectable, resumable, and repeatable.
+Why team mode exists even when ultrawork already exists:
+- Use **ultrawork** when tasks are mostly independent and the leader can merge results afterward.
+- Use **team mode** when the work benefits from shared situational awareness: workers can discover blockers early, hand work across lanes, and keep execution visible through durable state, with tmux available only when a live pane workflow is actually needed.
+- Team mode is the better fit for orchestration-heavy or edge-case-heavy work where runtime control, recovery, and inspectability matter as much as raw fanout.
 
 ## Team Mode vs. Ultrawork
 
@@ -239,7 +245,7 @@ omx agents-init .  # Bootstrap lightweight AGENTS.md files for a repo/subtree
 omx doctor         # Installation/runtime diagnostics
 omx doctor --team  # Team Mode diagnostics
 omx ask ...        # Ask local provider advisor (claude|gemini), writes .omx/artifacts/*
-omx team ...       # Start/status/resume/shutdown team workers (interactive tmux by default)
+omx team ...       # Start/status/resume/shutdown team workers (prompt-mode by default; no tmux required)
 omx ralph          # Launch Codex with ralph persistence mode active
 omx status         # Show active modes
 omx cancel         # Cancel active execution modes

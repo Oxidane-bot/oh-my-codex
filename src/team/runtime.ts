@@ -273,48 +273,6 @@ function resolveWorkerReadyTimeoutMs(env: NodeJS.ProcessEnv): number {
   return 45_000;
 }
 
-function parseTeamWorkerContext(raw: string | undefined): { teamName: string; workerName: string } | null {
-  if (typeof raw !== 'string' || raw.trim() === '') return null;
-  const [teamName, workerName] = raw.trim().split('/');
-  if (!teamName || !workerName) return null;
-  return { teamName, workerName };
-}
-
-function resolveManifestLookupCwds(cwd: string): string[] {
-  const candidates = new Set<string>([resolve(cwd)]);
-  const leaderCwd = process.env[TEAM_LEADER_CWD_ENV];
-  if (typeof leaderCwd === 'string' && leaderCwd.trim() !== '') {
-    candidates.add(resolve(leaderCwd));
-  }
-
-  const teamStateRoot = process.env[TEAM_STATE_ROOT_ENV];
-  if (typeof teamStateRoot === 'string' && teamStateRoot.trim() !== '') {
-    candidates.add(resolve(teamStateRoot, '..', '..'));
-  }
-
-  return [...candidates];
-}
-
-function resolveGovernancePolicy(
-  governance: TeamGovernance | null | undefined,
-): TeamGovernance {
-  return normalizeTeamGovernance(governance);
-}
-
-async function assertNestedTeamAllowed(cwd: string): Promise<void> {
-  const workerContext = parseTeamWorkerContext(process.env.OMX_TEAM_WORKER);
-  if (!workerContext) return;
-
-  for (const candidateCwd of resolveManifestLookupCwds(cwd)) {
-    const manifest = await readTeamManifestV2(workerContext.teamName, candidateCwd);
-    const governance = resolveGovernancePolicy(manifest?.governance);
-    if (governance.nested_teams_allowed) return;
-    if (manifest) break;
-  }
-
-  throw new Error('nested_team_disallowed');
-}
-
 type WorkerStartupEvidence = 'task_claim' | 'worker_progress' | 'leader_ack' | 'none';
 
 async function readWorkerStartupEvidence(
@@ -1393,7 +1351,6 @@ export async function assignTask(
   const task = await readTask(sanitized, taskId, cwd);
   if (!task) throw new Error(`Task ${taskId} not found`);
   const manifest = await readTeamManifestV2(sanitized, cwd);
-  const governance = resolveGovernancePolicy(manifest?.governance);
 
   if (manifest?.policy?.delegation_only && workerName === 'leader-fixed') {
     throw new Error('delegation_only_violation');
@@ -1515,8 +1472,6 @@ export async function shutdownTeam(teamName: string, cwd: string, options: Shutd
     restoreTeamModelInstructionsFile(sanitized);
     return;
   }
-  const manifest = await readTeamManifestV2(sanitized, cwd);
-  const governance = resolveGovernancePolicy(manifest?.governance);
 
   if (!force) {
     const allTasks = await listTasks(sanitized, cwd);
@@ -1822,8 +1777,7 @@ async function findActiveTeams(cwd: string, leaderSessionId: string): Promise<st
     const teamName = e.name;
     const cfg = await readTeamConfig(teamName, cwd);
     const manifest = await readTeamManifestV2(teamName, cwd);
-    const governance = resolveGovernancePolicy(manifest?.governance);
-    if (governance.one_team_per_leader_session === false) continue;
+    if (manifest?.policy?.one_team_per_leader_session === false) continue;
     const workerLaunchMode = cfg?.worker_launch_mode
       ?? manifest?.policy?.worker_launch_mode
       ?? 'interactive';
