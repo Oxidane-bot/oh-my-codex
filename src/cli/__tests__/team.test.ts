@@ -1362,6 +1362,160 @@ describe('teamCommand status', () => {
       await rm(wd, { recursive: true, force: true });
     }
   });
+
+  it('surfaces native/state inspection guidance for prompt-mode teams without tmux panes', async () => {
+    const wd = await mkdtemp(join(tmpdir(), 'omx-team-status-prompt-inspect-'));
+    const previousCwd = process.cwd();
+    const logs: string[] = [];
+    const originalLog = console.log;
+    try {
+      process.chdir(wd);
+      const config = await initTeamState('prompt-inspect-team', 'inspect prompt worker state', 'executor', 1, wd);
+      config.worker_launch_mode = 'prompt';
+      config.runtime_session_id = 'prompt-prompt-inspect-team';
+      config.tmux_session = null;
+      config.leader_pane_id = null;
+      config.hud_pane_id = null;
+      config.workers[0]!.pid = process.pid;
+
+      const manifestPath = join(wd, '.omx', 'state', 'team', 'prompt-inspect-team', 'manifest.v2.json');
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as {
+        policy?: { worker_launch_mode?: 'interactive' | 'prompt' };
+        runtime_session_id?: string | null;
+        tmux_session?: string | null;
+      };
+      manifest.policy = { ...(manifest.policy || {}), worker_launch_mode: 'prompt' };
+      manifest.runtime_session_id = config.runtime_session_id;
+      manifest.tmux_session = null;
+
+      await writeFile(
+        join(wd, '.omx', 'state', 'team', 'prompt-inspect-team', 'config.json'),
+        `${JSON.stringify(config, null, 2)}\n`,
+      );
+      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+      await createTask('prompt-inspect-team', {
+        subject: 'Recover prompt worker',
+        description: 'Inspect prompt worker state',
+        owner: 'worker-1',
+        status: 'pending',
+      }, wd);
+      await writeWorkerStatus('prompt-inspect-team', 'worker-1', {
+        state: 'working',
+        current_task_id: '1',
+        updated_at: '2026-03-11T00:00:00.000Z',
+        reason: 'waiting on prompt runtime',
+      }, wd);
+      await updateWorkerHeartbeat('prompt-inspect-team', 'worker-1', {
+        pid: process.pid,
+        turn_count: 3,
+        alive: false,
+        last_turn_at: '2026-03-11T00:03:00.000Z',
+      }, wd);
+
+      console.log = (...args: unknown[]) => logs.push(args.map(String).join(' '));
+      await teamCommand(['status', 'prompt-inspect-team', '--json']);
+
+      const payload = JSON.parse(logs.at(-1) ?? '{}') as {
+        panes?: {
+          worker_panes?: Record<string, string>;
+          sparkshell_hint?: string | null;
+          recommended_inspect_targets?: string[];
+          recommended_inspect_command?: string | null;
+          recommended_inspect_commands?: string[];
+          recommended_inspect_summary?: string | null;
+          recommended_inspect_panes?: Record<string, string | null>;
+          recommended_inspect_items?: Array<{
+            target: string;
+            pane_id: string | null;
+            command: string | null;
+            worker_status_path: string | null;
+            worker_inbox_path: string | null;
+            reason: string;
+            task_created_at?: string | null;
+          }>;
+        };
+      };
+
+      assert.deepEqual(payload.panes?.worker_panes, {});
+      assert.equal(payload.panes?.sparkshell_hint, null);
+      assert.deepEqual(payload.panes?.recommended_inspect_targets, ['worker-1']);
+      assert.equal(payload.panes?.recommended_inspect_command, null);
+      assert.deepEqual(payload.panes?.recommended_inspect_commands, []);
+      assert.match(payload.panes?.recommended_inspect_summary ?? '', /target=worker-1/);
+      assert.match(payload.panes?.recommended_inspect_summary ?? '', /reason=dead_worker/);
+      assert.ok(!(payload.panes?.recommended_inspect_summary ?? '').includes('command='));
+      assert.deepEqual(payload.panes?.recommended_inspect_panes, { 'worker-1': null });
+      assert.equal(payload.panes?.recommended_inspect_items?.length, 1);
+      assert.deepEqual(payload.panes?.recommended_inspect_items?.[0], {
+        ...payload.panes?.recommended_inspect_items?.[0],
+        target: 'worker-1',
+        pane_id: null,
+        role: 'executor',
+        index: 1,
+        alive: false,
+        turn_count: 3,
+        turns_without_progress: 0,
+        last_turn_at: '2026-03-11T00:03:00.000Z',
+        status_updated_at: '2026-03-11T00:00:00.000Z',
+        worktree_repo_root: null,
+        worktree_path: null,
+        worktree_branch: null,
+        worktree_detached: null,
+        worktree_created: null,
+        task_status: 'pending',
+        task_result: null,
+        task_error: null,
+        task_version: 1,
+        task_completed_at: null,
+        task_depends_on: [],
+        task_claim_present: false,
+        task_claim_owner: null,
+        task_claim_token: null,
+        task_claim_leased_until: null,
+        task_claim_lock_path: `${wd}/.omx/state/team/prompt-inspect-team/claims/task-1.lock`,
+        approval_required: null,
+        requires_code_change: null,
+        task_description: 'Inspect prompt worker state',
+        blocked_by: [],
+        task_role: null,
+        task_owner: 'worker-1',
+        approval_status: null,
+        approval_reviewer: null,
+        approval_reason: null,
+        approval_decided_at: null,
+        approval_record_present: false,
+        reason: 'dead_worker',
+        state: 'working',
+        state_reason: 'waiting on prompt runtime',
+        task_id: '1',
+        task_subject: 'Recover prompt worker',
+        task_path: `${wd}/.omx/state/team/prompt-inspect-team/tasks/task-1.json`,
+        approval_path: `${wd}/.omx/state/team/prompt-inspect-team/approvals/task-1.json`,
+        worker_state_dir: `${wd}/.omx/state/team/prompt-inspect-team/workers/worker-1`,
+        worker_status_path: `${wd}/.omx/state/team/prompt-inspect-team/workers/worker-1/status.json`,
+        worker_heartbeat_path: `${wd}/.omx/state/team/prompt-inspect-team/workers/worker-1/heartbeat.json`,
+        worker_identity_path: `${wd}/.omx/state/team/prompt-inspect-team/workers/worker-1/identity.json`,
+        worker_inbox_path: `${wd}/.omx/state/team/prompt-inspect-team/workers/worker-1/inbox.md`,
+        worker_mailbox_path: `${wd}/.omx/state/team/prompt-inspect-team/mailbox/worker-1.json`,
+        worker_shutdown_request_path: `${wd}/.omx/state/team/prompt-inspect-team/workers/worker-1/shutdown-request.json`,
+        worker_shutdown_ack_path: `${wd}/.omx/state/team/prompt-inspect-team/workers/worker-1/shutdown-ack.json`,
+        team_dir_path: `${wd}/.omx/state/team/prompt-inspect-team`,
+        team_config_path: `${wd}/.omx/state/team/prompt-inspect-team/config.json`,
+        team_manifest_path: `${wd}/.omx/state/team/prompt-inspect-team/manifest.v2.json`,
+        team_events_path: `${wd}/.omx/state/team/prompt-inspect-team/events/events.ndjson`,
+        team_dispatch_path: `${wd}/.omx/state/team/prompt-inspect-team/dispatch/requests.json`,
+        team_phase_path: `${wd}/.omx/state/team/prompt-inspect-team/phase.json`,
+        team_monitor_snapshot_path: `${wd}/.omx/state/team/prompt-inspect-team/monitor-snapshot.json`,
+        team_summary_snapshot_path: `${wd}/.omx/state/team/prompt-inspect-team/summary-snapshot.json`,
+        command: null,
+      });
+    } finally {
+      console.log = originalLog;
+      process.chdir(previousCwd);
+      await rm(wd, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('teamCommand await', () => {

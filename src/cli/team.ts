@@ -405,7 +405,7 @@ async function readTeamPaneStatus(
   recommended_inspect_summary: string | null;
   recommended_inspect_items: Array<{
     target: string;
-    pane_id: string;
+    pane_id: string | null;
     worker_cli: TeamWorkerCli | null;
     role: string | null;
     index: number | null;
@@ -469,7 +469,7 @@ async function readTeamPaneStatus(
     team_phase_path: string | null;
     team_monitor_snapshot_path: string | null;
     team_summary_snapshot_path: string | null;
-    command: string;
+    command: string | null;
   }>;
 }> {
   if (!config) {
@@ -574,11 +574,12 @@ async function readTeamPaneStatus(
     ].filter((entry): entry is [string, string] => entry !== null),
   );
 
+  const knownWorkers = new Set(config.workers.map((worker) => worker.name));
   const recommendedInspectTargets = [
     ...(snapshot?.deadWorkers ?? []),
     ...(snapshot?.nonReportingWorkers ?? []),
   ].filter((workerName, index, values) => (
-    Object.hasOwn(workerPanes, workerName) && values.indexOf(workerName) === index
+    knownWorkers.has(workerName) && values.indexOf(workerName) === index
   ));
   const recommendedInspectReasons = Object.fromEntries(
     recommendedInspectTargets.map((target) => [
@@ -1012,10 +1013,9 @@ async function readTeamPaneStatus(
     .map((target) => {
       const command = sparkshellCommands[target];
       const paneId = recommendedInspectPanes[target];
-      if (!command || !paneId) return null;
       return {
         target,
-        pane_id: paneId,
+        pane_id: paneId ?? null,
         worker_cli: recommendedInspectClis[target] ?? null,
         role: recommendedInspectRoles[target] ?? null,
         index: recommendedInspectIndexes[target] ?? null,
@@ -1079,7 +1079,7 @@ async function readTeamPaneStatus(
         team_phase_path: recommendedInspectTeamPhasePaths[target] ?? null,
         team_monitor_snapshot_path: recommendedInspectTeamMonitorSnapshotPaths[target] ?? null,
         team_summary_snapshot_path: recommendedInspectTeamSummarySnapshotPaths[target] ?? null,
-        command,
+        command: command ?? null,
       };
     })
     .filter((item): item is Exclude<typeof item, null> => item !== null);
@@ -1586,7 +1586,8 @@ function renderTeamPaneStatus(
     const teamPhasePathPart = item.team_phase_path ? ` team_phase_path=${item.team_phase_path}` : '';
     const teamMonitorSnapshotPathPart = item.team_monitor_snapshot_path ? ` team_monitor_snapshot_path=${item.team_monitor_snapshot_path}` : '';
     const teamSummarySnapshotPathPart = item.team_summary_snapshot_path ? ` team_summary_snapshot_path=${item.team_summary_snapshot_path}` : '';
-    console.log(`inspect_item_${index + 1}: target=${item.target}${panePart}${cliPart}${rolePart}${indexPart}${alivePart}${turnCountPart}${turnsWithoutProgressPart}${lastTurnPart}${statusUpdatedPart}${pidPart}${worktreeRepoRootPart}${worktreePathPart}${worktreeBranchPart}${worktreeDetachedPart}${worktreeCreatedPart}${teamStateRootPart}${workdirPart}${assignedTasksPart}${taskStatusPart}${taskResultPart}${taskErrorPart}${taskVersionPart}${taskCreatedAtPart}${taskCompletedAtPart}${taskDependsOnPart}${taskClaimPresentPart}${taskClaimOwnerPart}${taskClaimTokenPart}${taskClaimLeasePart}${taskClaimLockPathPart}${approvalRequiredPart}${requiresCodeChangePart}${taskDescriptionPart}${blockedByPart}${taskRolePart}${taskOwnerPart}${approvalStatusPart}${approvalReviewerPart}${approvalReasonPart}${approvalDecidedAtPart}${approvalRecordPresentPart}${stateReasonPart}${taskPart}${subjectPart}${taskPathPart}${approvalPathPart}${workerStateDirPart}${workerStatusPathPart}${workerHeartbeatPathPart}${workerIdentityPathPart}${workerInboxPathPart}${workerMailboxPathPart}${workerShutdownRequestPathPart}${workerShutdownAckPathPart}${teamDirPathPart}${teamConfigPathPart}${teamManifestPathPart}${teamEventsPathPart}${teamDispatchPathPart}${teamPhasePathPart}${teamMonitorSnapshotPathPart}${teamSummarySnapshotPathPart} reason=${item.reason}${statePart} command=${item.command}`);
+    const commandPart = item.command ? ` command=${item.command}` : '';
+    console.log(`inspect_item_${index + 1}: target=${item.target}${panePart}${cliPart}${rolePart}${indexPart}${alivePart}${turnCountPart}${turnsWithoutProgressPart}${lastTurnPart}${statusUpdatedPart}${pidPart}${worktreeRepoRootPart}${worktreePathPart}${worktreeBranchPart}${worktreeDetachedPart}${worktreeCreatedPart}${teamStateRootPart}${workdirPart}${assignedTasksPart}${taskStatusPart}${taskResultPart}${taskErrorPart}${taskVersionPart}${taskCreatedAtPart}${taskCompletedAtPart}${taskDependsOnPart}${taskClaimPresentPart}${taskClaimOwnerPart}${taskClaimTokenPart}${taskClaimLeasePart}${taskClaimLockPathPart}${approvalRequiredPart}${requiresCodeChangePart}${taskDescriptionPart}${blockedByPart}${taskRolePart}${taskOwnerPart}${approvalStatusPart}${approvalReviewerPart}${approvalReasonPart}${approvalDecidedAtPart}${approvalRecordPresentPart}${stateReasonPart}${taskPart}${subjectPart}${taskPathPart}${approvalPathPart}${workerStateDirPart}${workerStatusPathPart}${workerHeartbeatPathPart}${workerIdentityPathPart}${workerInboxPathPart}${workerMailboxPathPart}${workerShutdownRequestPathPart}${workerShutdownAckPathPart}${teamDirPathPart}${teamConfigPathPart}${teamManifestPathPart}${teamEventsPathPart}${teamDispatchPathPart}${teamPhasePathPart}${teamMonitorSnapshotPathPart}${teamSummarySnapshotPathPart} reason=${item.reason}${statePart}${commandPart}`);
   }
 
   for (const [target, command] of Object.entries(paneStatus.sparkshell_commands)) {
