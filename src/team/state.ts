@@ -1666,6 +1666,17 @@ export async function readShutdownAck(
 
 // === Monitor snapshot ===
 
+export interface TeamWorkerIntegrationState {
+  last_seen_head?: string;
+  last_integrated_head?: string;
+  last_leader_head?: string;
+  last_rebased_leader_head?: string;
+  status?: 'idle' | 'integrated' | 'cherry_pick_conflict' | 'rebase_conflict';
+  conflict_commit?: string;
+  conflict_files?: string[];
+  updated_at?: string;
+}
+
 export interface TeamMonitorSnapshotState {
   taskStatusById: Record<string, string>;
   workerAliveByName: Record<string, boolean>;
@@ -1675,6 +1686,7 @@ export interface TeamMonitorSnapshotState {
   mailboxNotifiedByMessageId: Record<string, string>;
   /** Task IDs for which a task_completed event has already been emitted (from any path). */
   completedEventTaskIds: Record<string, boolean>;
+  integrationByWorker?: Record<string, TeamWorkerIntegrationState>;
   /** Optional timing telemetry from the most recent monitorTeam poll. */
   monitorTimings?: {
     list_tasks_ms: number;

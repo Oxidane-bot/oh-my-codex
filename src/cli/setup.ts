@@ -22,6 +22,7 @@ import {
   codexConfigPath,
   codexPromptsDir,
   userSkillsDir,
+  legacyUserSkillsDir,
   omxStateDir,
   omxPlansDir,
   omxLogsDir,
@@ -50,6 +51,7 @@ interface SetupOptions {
   force?: boolean;
   dryRun?: boolean;
   scope?: SetupScope;
+  skillTarget?: SetupSkillTarget;
   verbose?: boolean;
   agentsOverwritePrompt?: (destinationPath: string) => Promise<boolean>;
   modelUpgradePrompt?: (
@@ -70,6 +72,8 @@ const LEGACY_SCOPE_MIGRATION: Record<string, "project"> = {
 
 export const SETUP_SCOPES = ["user", "project"] as const;
 export type SetupScope = (typeof SETUP_SCOPES)[number];
+export const SETUP_SKILL_TARGETS = ["codex-home", "agents"] as const;
+export type SetupSkillTarget = (typeof SETUP_SKILL_TARGETS)[number];
 
 export interface ScopeDirectories {
   codexConfigFile: string;
@@ -100,10 +104,20 @@ interface SetupBackupContext {
   baseRoot: string;
 }
 
+export interface SkillFrontmatterMetadata {
+  name: string;
+  description: string;
+}
+
+const PROJECT_OMX_GITIGNORE_ENTRY = ".omx/";
+
 function applyScopePathRewritesToAgentsTemplate(
   content: string,
   scope: SetupScope,
 ): string {
+  if (scope === "user") {
+    return content.replaceAll("~/.agents/skills", "~/.codex/skills");
+  }
   if (scope !== "project") return content;
   return content
     .replaceAll("~/.codex", "./.codex")
@@ -112,11 +126,17 @@ function applyScopePathRewritesToAgentsTemplate(
 
 interface PersistedSetupScope {
   scope: SetupScope;
+  skillTarget?: SetupSkillTarget;
 }
 
 interface ResolvedSetupScope {
   scope: SetupScope;
   source: "cli" | "persisted" | "prompt" | "default";
+}
+
+interface ResolvedSetupSkillTarget {
+  target: SetupSkillTarget;
+  source: "cli" | "persisted" | "default";
 }
 
 const REQUIRED_TEAM_CLI_API_MARKERS = [
@@ -126,6 +146,7 @@ const REQUIRED_TEAM_CLI_API_MARKERS = [
 ] as const;
 
 const DEFAULT_SETUP_SCOPE: SetupScope = "user";
+const DEFAULT_SETUP_SKILL_TARGET: SetupSkillTarget = "codex-home";
 
 const LEGACY_SETUP_MODEL = "gpt-5.3-codex";
 const DEFAULT_SETUP_MODEL = DEFAULT_FRONTIER_MODEL;
@@ -201,6 +222,89 @@ async function filesDiffer(src: string, dst: string): Promise<boolean> {
   return srcContent !== dstContent;
 }
 
+function parseSkillFrontmatterScalar(
+  value: string,
+  key: string,
+  filePath: string,
+): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`${filePath} frontmatter "${key}" must not be empty`);
+  }
+  if (trimmed === "|" || trimmed === ">") {
+    throw new Error(`${filePath} frontmatter "${key}" must be a single-line string`);
+  }
+
+  const quote = trimmed[0];
+  if (quote === '"' || quote === "'") {
+    if (trimmed.length < 2 || trimmed.at(-1) !== quote) {
+      throw new Error(`${filePath} frontmatter "${key}" has an unterminated quoted string`);
+    }
+    const unquoted = trimmed.slice(1, -1).trim();
+    if (!unquoted) {
+      throw new Error(`${filePath} frontmatter "${key}" must not be empty`);
+    }
+    return unquoted;
+  }
+
+  const unquoted = trimmed.replace(/\s+#.*$/, "").trim();
+  if (!unquoted) {
+    throw new Error(`${filePath} frontmatter "${key}" must not be empty`);
+  }
+  return unquoted;
+}
+
+export function parseSkillFrontmatter(
+  content: string,
+  filePath = "SKILL.md",
+): SkillFrontmatterMetadata {
+  const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  if (!frontmatterMatch) {
+    throw new Error(
+      `${filePath} must start with YAML frontmatter containing non-empty name and description fields`,
+    );
+  }
+
+  let name: string | undefined;
+  let description: string | undefined;
+  const lines = frontmatterMatch[1].split(/\r?\n/);
+
+  for (const [index, rawLine] of lines.entries()) {
+    const line = rawLine.trimEnd();
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    if (/^\s/.test(rawLine)) continue;
+
+    const match = line.match(/^([A-Za-z0-9_-]+):(.*)$/);
+    if (!match) {
+      throw new Error(
+        `${filePath} has invalid YAML frontmatter on line ${index + 2}: ${trimmed}`,
+      );
+    }
+
+    const [, key, rawValue] = match;
+    if (!rawValue.trim()) continue;
+
+    const parsedValue = parseSkillFrontmatterScalar(rawValue, key, filePath);
+    if (key === "name") name = parsedValue;
+    if (key === "description") description = parsedValue;
+  }
+
+  if (!name) {
+    throw new Error(`${filePath} is missing a non-empty frontmatter "name"`);
+  }
+  if (!description) {
+    throw new Error(`${filePath} is missing a non-empty frontmatter "description"`);
+  }
+
+  return { name, description };
+}
+
+export async function validateSkillFile(skillMdPath: string): Promise<void> {
+  const content = await readFile(skillMdPath, "utf-8");
+  parseSkillFrontmatter(content, skillMdPath);
+}
+
 function logCategorySummary(name: string, summary: SetupCategorySummary): void {
   console.log(
     `  ${name}: updated=${summary.updated}, unchanged=${summary.unchanged}, ` +
@@ -211,14 +315,18 @@ function logCategorySummary(name: string, summary: SetupCategorySummary): void {
 function isSetupScope(value: string): value is SetupScope {
   return SETUP_SCOPES.includes(value as SetupScope);
 }
-
 function getScopeFilePath(projectRoot: string): string {
   return join(projectRoot, ".omx", "setup-scope.json");
+}
+
+function isSetupSkillTarget(value: string): value is SetupSkillTarget {
+  return SETUP_SKILL_TARGETS.includes(value as SetupSkillTarget);
 }
 
 export function resolveScopeDirectories(
   scope: SetupScope,
   projectRoot: string,
+  skillTarget: SetupSkillTarget = DEFAULT_SETUP_SKILL_TARGET,
 ): ScopeDirectories {
   if (scope === "project") {
     const codexHomeDir = join(projectRoot, ".codex");
@@ -235,21 +343,24 @@ export function resolveScopeDirectories(
     codexHomeDir: codexHome(),
     nativeAgentsDir: omxAgentsConfigDir(),
     promptsDir: codexPromptsDir(),
-    skillsDir: userSkillsDir(),
+    skillsDir: skillTarget === "agents" ? legacyUserSkillsDir() : userSkillsDir(),
   };
 }
 
-async function readPersistedSetupScope(
+async function readPersistedSetupPreferences(
   projectRoot: string,
-): Promise<SetupScope | undefined> {
+): Promise<Partial<PersistedSetupScope> | undefined> {
   const scopePath = getScopeFilePath(projectRoot);
   if (!existsSync(scopePath)) return undefined;
   try {
     const raw = await readFile(scopePath, "utf-8");
     const parsed = JSON.parse(raw) as Partial<PersistedSetupScope>;
+    const persisted: Partial<PersistedSetupScope> = {};
     if (parsed && typeof parsed.scope === "string") {
       // Direct match to current scopes
-      if (isSetupScope(parsed.scope)) return parsed.scope;
+      if (isSetupScope(parsed.scope)) {
+        persisted.scope = parsed.scope;
+      }
       // Migrate legacy scope values (project-local → project)
       const migrated = LEGACY_SCOPE_MIGRATION[parsed.scope];
       if (migrated) {
@@ -257,9 +368,13 @@ async function readPersistedSetupScope(
           `[omx] Migrating persisted setup scope "${parsed.scope}" → "${migrated}" ` +
             `(see issue #243: simplified to user/project).`,
         );
-        return migrated;
+        persisted.scope = migrated;
       }
     }
+    if (parsed && typeof parsed.skillTarget === "string" && isSetupSkillTarget(parsed.skillTarget)) {
+      persisted.skillTarget = parsed.skillTarget;
+    }
+    return Object.keys(persisted).length > 0 ? persisted : undefined;
   } catch {
     // ignore invalid persisted scope and fall back to prompt/default
   }
@@ -278,7 +393,7 @@ async function promptForSetupScope(
   });
   try {
     console.log("Select setup scope:");
-    console.log(`  1) user (default) — installs to ~/.codex, ~/.agents`);
+    console.log(`  1) user (default) — installs to ~/.codex (skills default to ~/.codex/skills)`);
     console.log(
       "  2) project — installs to ./.codex, ./.agents (local to project)",
     );
@@ -348,9 +463,9 @@ async function resolveSetupScope(
   if (requestedScope) {
     return { scope: requestedScope, source: "cli" };
   }
-  const persisted = await readPersistedSetupScope(projectRoot);
-  if (persisted) {
-    return { scope: persisted, source: "persisted" };
+  const persisted = await readPersistedSetupPreferences(projectRoot);
+  if (persisted?.scope) {
+    return { scope: persisted.scope, source: "persisted" };
   }
   if (process.stdin.isTTY && process.stdout.isTTY) {
     const scope = await promptForSetupScope(DEFAULT_SETUP_SCOPE);
@@ -359,9 +474,69 @@ async function resolveSetupScope(
   return { scope: DEFAULT_SETUP_SCOPE, source: "default" };
 }
 
+async function resolveSetupSkillTarget(
+  projectRoot: string,
+  scope: SetupScope,
+  requestedSkillTarget?: SetupSkillTarget,
+): Promise<ResolvedSetupSkillTarget> {
+  if (requestedSkillTarget) {
+    return { target: requestedSkillTarget, source: "cli" };
+  }
+  if (scope !== "user") {
+    return { target: DEFAULT_SETUP_SKILL_TARGET, source: "default" };
+  }
+  const persisted = await readPersistedSetupPreferences(projectRoot);
+  if (persisted?.skillTarget) {
+    return { target: persisted.skillTarget, source: "persisted" };
+  }
+  return { target: DEFAULT_SETUP_SKILL_TARGET, source: "default" };
+}
+
+function hasGitignoreEntry(content: string, entry: string): boolean {
+  return content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .some((line) => line === entry);
+}
+
+async function ensureProjectOmxGitignore(
+  projectRoot: string,
+  backupContext: SetupBackupContext,
+  options: Pick<SetupOptions, "dryRun" | "verbose">,
+): Promise<"created" | "updated" | "unchanged"> {
+  const gitignorePath = join(projectRoot, ".gitignore");
+  const destinationExists = existsSync(gitignorePath);
+  const existing = destinationExists ? await readFile(gitignorePath, "utf-8") : "";
+
+  if (hasGitignoreEntry(existing, PROJECT_OMX_GITIGNORE_ENTRY)) {
+    return "unchanged";
+  }
+
+  const nextContent = destinationExists
+    ? `${existing}${existing.endsWith("\n") || existing.length === 0 ? "" : "\n"}${PROJECT_OMX_GITIGNORE_ENTRY}\n`
+    : `${PROJECT_OMX_GITIGNORE_ENTRY}\n`;
+
+  if (await ensureBackup(gitignorePath, destinationExists, backupContext, options)) {
+    // backup created when refreshing a pre-existing .gitignore
+  }
+
+  if (!options.dryRun) {
+    await writeFile(gitignorePath, nextContent);
+  }
+
+  if (options.verbose) {
+    console.log(
+      `  ${options.dryRun ? "would update" : destinationExists ? "updated" : "created"} .gitignore (${PROJECT_OMX_GITIGNORE_ENTRY})`,
+    );
+  }
+
+  return destinationExists ? "updated" : "created";
+}
+
 async function persistSetupScope(
   projectRoot: string,
   scope: SetupScope,
+  skillTarget: SetupSkillTarget,
   options: Pick<SetupOptions, "dryRun" | "verbose">,
 ): Promise<void> {
   const scopePath = getScopeFilePath(projectRoot);
@@ -370,7 +545,7 @@ async function persistSetupScope(
     return;
   }
   await mkdir(dirname(scopePath), { recursive: true });
-  const payload: PersistedSetupScope = { scope };
+  const payload: PersistedSetupScope = { scope, skillTarget };
   await writeFile(scopePath, JSON.stringify(payload, null, 2) + "\n");
   if (options.verbose) console.log(`  Wrote ${scopePath}`);
 }
@@ -380,21 +555,39 @@ export async function setup(options: SetupOptions = {}): Promise<void> {
     force = false,
     dryRun = false,
     scope: requestedScope,
+    skillTarget: requestedSkillTarget,
     verbose = false,
     modelUpgradePrompt,
   } = options;
   const pkgRoot = getPackageRoot();
   const projectRoot = process.cwd();
   const resolvedScope = await resolveSetupScope(projectRoot, requestedScope);
-  const scopeDirs = resolveScopeDirectories(resolvedScope.scope, projectRoot);
+  const resolvedSkillTarget = await resolveSetupSkillTarget(
+    projectRoot,
+    resolvedScope.scope,
+    requestedSkillTarget,
+  );
+  const scopeDirs = resolveScopeDirectories(
+    resolvedScope.scope,
+    projectRoot,
+    resolvedSkillTarget.target,
+  );
   const scopeSourceMessage =
     resolvedScope.source === "persisted" ? " (from .omx/setup-scope.json)" : "";
+  const skillTargetSourceMessage =
+    resolvedSkillTarget.source === "persisted" ? " (from .omx/setup-scope.json)" : "";
+  const backupContext = getBackupContext(resolvedScope.scope, projectRoot);
 
   console.log("oh-my-codex setup");
   console.log("=================\n");
   console.log(
     `Using setup scope: ${resolvedScope.scope}${scopeSourceMessage}\n`,
   );
+  if (resolvedScope.scope === "user") {
+    console.log(
+      `Using user skill target: ${resolvedSkillTarget.target}${skillTargetSourceMessage} (${scopeDirs.skillsDir})\n`,
+    );
+  }
 
   // Step 1: Ensure directories exist
   console.log("[1/8] Creating directories...");
@@ -413,15 +606,31 @@ export async function setup(options: SetupOptions = {}): Promise<void> {
     }
     if (verbose) console.log(`  mkdir ${dir}`);
   }
-  await persistSetupScope(projectRoot, resolvedScope.scope, {
+  await persistSetupScope(projectRoot, resolvedScope.scope, resolvedSkillTarget.target, {
     dryRun,
     verbose,
   });
   console.log("  Done.\n");
 
+  if (resolvedScope.scope === "project") {
+    const gitignoreResult = await ensureProjectOmxGitignore(
+      projectRoot,
+      backupContext,
+      { dryRun, verbose },
+    );
+    if (gitignoreResult === "created") {
+      console.log(
+        "  Created .gitignore with .omx/ so local OMX runtime state stays out of source control.\n",
+      );
+    } else if (gitignoreResult === "updated") {
+      console.log(
+        "  Added .omx/ to .gitignore so local OMX runtime state stays out of source control.\n",
+      );
+    }
+  }
+
   const catalogCounts = getCatalogHeadlineCounts();
   const summary = createEmptyRunSummary();
-  const backupContext = getBackupContext(resolvedScope.scope, projectRoot);
 
   // Step 2: Install agent prompts
   console.log("[2/8] Installing agent prompts...");
@@ -1014,7 +1223,7 @@ async function refreshNativeAgentConfigs(
   return summary;
 }
 
-async function installSkills(
+export async function installSkills(
   srcDir: string,
   dstDir: string,
   backupContext: SetupBackupContext,
@@ -1022,6 +1231,11 @@ async function installSkills(
 ): Promise<SetupCategorySummary> {
   const summary = createEmptyCategorySummary();
   if (!existsSync(srcDir)) return summary;
+  const installableSkills: Array<{
+    name: string;
+    sourceDir: string;
+    destinationDir: string;
+  }> = [];
   const manifest = tryReadCatalogManifest();
   const skillStatusByName = manifest
     ? new Map(manifest.skills.map((skill) => [skill.name, skill.status]))
@@ -1050,6 +1264,22 @@ async function installSkills(
     const skillMd = join(skillSrc, "SKILL.md");
     if (!existsSync(skillMd)) continue;
 
+    installableSkills.push({
+      name: entry.name,
+      sourceDir: skillSrc,
+      destinationDir: skillDst,
+    });
+  }
+
+  for (const skill of installableSkills) {
+    await validateSkillFile(join(skill.sourceDir, "SKILL.md"));
+  }
+
+  for (const skill of installableSkills) {
+    const skillName = skill.name;
+    const skillSrc = skill.sourceDir;
+    const skillDst = skill.destinationDir;
+
     if (!options.dryRun) {
       await mkdir(skillDst, { recursive: true });
     }
@@ -1066,7 +1296,7 @@ async function installSkills(
         summary,
         backupContext,
         options,
-        `skill ${entry.name}/${sf}`,
+        `skill ${skillName}/${sf}`,
       );
     }
   }

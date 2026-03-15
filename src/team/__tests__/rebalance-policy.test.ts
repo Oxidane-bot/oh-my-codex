@@ -98,6 +98,51 @@ describe('rebalance-policy', () => {
     assert.deepEqual(decisions, []);
   });
 
+  it('prefers specialized lanes for reclaimed work before lighter generic lanes', () => {
+    const decisions = buildRebalanceDecisions({
+      reclaimedTaskIds: ['7'],
+      tasks: [
+        {
+          id: '1',
+          subject: 'Existing docs lane',
+          description: 'writer still active',
+          status: 'in_progress',
+          owner: 'worker-1',
+          role: 'writer',
+          created_at: '2026-03-11T00:00:00.000Z',
+        },
+        {
+          id: '7',
+          subject: 'Recovered docs follow-up',
+          description: 'same writer domain',
+          status: 'pending',
+          role: 'writer',
+          created_at: '2026-03-11T00:00:01.000Z',
+        },
+      ],
+      workers: [
+        {
+          name: 'worker-1',
+          alive: true,
+          status: { state: 'idle', updated_at: '2026-03-11T00:00:02.000Z' },
+          role: 'writer',
+        },
+        {
+          name: 'worker-2',
+          alive: true,
+          status: { state: 'idle', updated_at: '2026-03-11T00:00:02.000Z' },
+          role: 'executor',
+        },
+      ],
+    });
+
+    assert.equal(decisions.length, 1);
+    assert.equal(decisions[0]?.type, 'assign');
+    assert.equal(decisions[0]?.taskId, '7');
+    assert.equal(decisions[0]?.workerName, 'worker-1');
+    assert.match(decisions[0]?.reason ?? '', /reclaimed work is ready; (keeps writer work grouped|matches worker role writer)/);
+  });
+
   it('does not assign work when no live idle worker is available', () => {
     const decisions = buildRebalanceDecisions({
       reclaimedTaskIds: ['4'],

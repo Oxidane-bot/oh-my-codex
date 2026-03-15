@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { updateModeState, startMode, readModeState } from '../modes/base.js';
 import { monitorTeam, resumeTeam, shutdownTeam, startTeam, type TeamRuntime, type TeamSnapshot } from '../team/runtime.js';
@@ -7,6 +8,7 @@ import { readTeamEvents, waitForTeamEvent } from '../team/state/events.js';
 import type { TeamEvent, TeamTask, WorkerInfo, WorkerStatus } from '../team/state.js';
 import { parseWorktreeMode, type WorktreeMode } from '../team/worktree.js';
 import { classifyTaskSize } from '../hooks/task-size-detector.js';
+import { readApprovedExecutionLaunchHint } from '../planning/artifacts.js';
 import { routeTaskToRole } from '../team/role-router.js';
 import { allocateTasksToWorkers } from '../team/allocation-policy.js';
 import {
@@ -38,6 +40,85 @@ interface ParsedTeamArgs {
   ralph: boolean;
 }
 
+
+interface TeamFollowupContext {
+  task: string;
+  workerCount: number;
+  explicitWorkerCount: boolean;
+  agentType?: string;
+  explicitAgentType?: boolean;
+  ralph: boolean;
+}
+
+function readPersistedTeamFollowupState(cwd: string): {
+  task?: string;
+  task_description?: string;
+  workerCount?: number;
+  agent_count?: number;
+  agentType?: string;
+  agent_types?: string;
+  linkedRalph?: boolean;
+  linked_ralph?: boolean;
+} | null {
+  const path = join(cwd, '.omx', 'state', 'team-state.json');
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, 'utf-8')) as {
+      task?: string;
+      workerCount?: number;
+      agentType?: string;
+      linkedRalph?: boolean;
+      task_description?: string;
+      agent_count?: number;
+      agent_types?: string;
+    };
+  } catch {
+    return null;
+  }
+}
+
+function resolveApprovedTeamFollowupContext(cwd: string, task: string): TeamFollowupContext | null {
+  const normalizedTask = task.trim();
+  if (!normalizedTask) return null;
+
+  const existingTeamState = readPersistedTeamFollowupState(cwd);
+  const shortFollowup = ['team', 'team으로 해줘', 'team으로 해주세요'].includes(normalizedTask);
+  if (!shortFollowup) return null;
+
+  const approvedHint = readApprovedExecutionLaunchHint(cwd, 'team');
+  if (!approvedHint) return null;
+
+  const persistedTask = typeof existingTeamState?.task_description === 'string'
+    ? existingTeamState.task_description
+    : typeof existingTeamState?.task === 'string'
+      ? existingTeamState.task
+      : null;
+  const persistedWorkerCount = typeof existingTeamState?.agent_count === 'number'
+    ? existingTeamState.agent_count
+    : typeof existingTeamState?.workerCount === 'number'
+      ? existingTeamState.workerCount
+      : null;
+  if (persistedTask && persistedWorkerCount && persistedTask.trim() === approvedHint.task.trim()) {
+    return {
+      task: persistedTask,
+      workerCount: persistedWorkerCount,
+      explicitWorkerCount: true,
+      agentType: approvedHint.agentType,
+      explicitAgentType: approvedHint.agentType != null,
+      ralph: existingTeamState?.linked_ralph === true || existingTeamState?.linkedRalph === true || approvedHint.linkedRalph === true,
+    };
+  }
+
+  return {
+    task: approvedHint.task,
+    workerCount: approvedHint.workerCount ?? 3,
+    explicitWorkerCount: approvedHint.workerCount != null,
+    agentType: approvedHint.agentType,
+    explicitAgentType: approvedHint.agentType != null,
+    ralph: approvedHint.linkedRalph === true,
+  };
+}
+
 const MIN_WORKER_COUNT = 1;
 const DEFAULT_SPARKSHELL_TAIL_LINES = 400;
 const MIN_SPARKSHELL_TAIL_LINES = 100;
@@ -50,6 +131,10 @@ Usage: omx team [ralph] [N:agent-type] "<task description>"
        omx team shutdown <team-name> [--force] [--ralph]
        omx team api <operation> [--input <json>] [--json]
        omx team api --help
+
+Notes:
+  team workers use dedicated worktrees automatically by default.
+  --worktree is deprecated for omx team and is now only a backward-compatible no-op override.
 
 Examples:
   omx team 3:executor "fix failing tests"
@@ -120,7 +205,7 @@ const TEAM_API_OPERATION_OPTIONAL_FIELDS: Partial<Record<TeamApiOperation, strin
     'assigned_tasks', 'pid', 'pane_id', 'working_dir',
     'worktree_path', 'worktree_branch', 'worktree_detached', 'team_state_root',
   ],
-  'append-event': ['task_id', 'message_id', 'reason'],
+  'append-event': ['task_id', 'message_id', 'reason', 'state', 'prev_state', 'to_worker', 'worker_count', 'source_type', 'metadata'],
   'read-events': ['after_event_id', 'wakeable_only', 'type', 'worker', 'task_id'],
   'await-event': ['after_event_id', 'timeout_ms', 'poll_ms', 'wakeable_only', 'type', 'worker', 'task_id'],
   'write-task-approval': ['required'],
@@ -132,8 +217,8 @@ const TEAM_API_OPERATION_NOTES: Partial<Record<TeamApiOperation, string>> = {
   'transition-task-status': 'Lifecycle flow is claim-safe and typically transitions in_progress -> completed|failed.',
   'cleanup': 'Uses the runtime shutdown contract; use orphan-cleanup only for known orphan recovery.',
   'orphan-cleanup': 'Destructive escape hatch for known orphan recovery. Bypasses shutdown orchestration.',
-  'read-events': 'Events are returned in canonical form; worker_idle log entries normalize to type worker_state_changed with source_type worker_idle. wakeable_only defaults to false; set wakeable_only=true to mirror omx team await semantics.',
-  'await-event': 'Waits for the next matching event and returns status=timeout when no matching event arrives before timeout_ms. wakeable_only defaults to false; set wakeable_only=true to mirror omx team await semantics.',
+  'read-events': 'Events are returned in canonical form; worker_idle log entries normalize to type worker_state_changed with source_type worker_idle. wakeable_only defaults to false; set wakeable_only=true to mirror omx team await semantics (wakeable events now include merge conflicts and per-signal stale alerts).',
+  'await-event': 'Waits for the next matching event and returns status=timeout when no matching event arrives before timeout_ms. wakeable_only defaults to false; set wakeable_only=true to mirror omx team await semantics (wakeable events now include merge conflicts and per-signal stale alerts).',
   'read-idle-state': 'Builds a structured idle summary from the existing monitor snapshot, team summary, and recent events.',
   'read-stall-state': 'Builds a structured stall summary from the existing monitor snapshot, team summary, and recent events.',
 };
@@ -163,6 +248,13 @@ function sampleValueForTeamApiField(field: string): unknown {
     case 'role': return 'executor';
     case 'assigned_tasks': return ['1', '2'];
     case 'type': return 'task_completed';
+    case 'metadata':
+      return {
+        summary: 'worker diff report',
+        worktree_path: '/tmp/team/worktrees/worker-1',
+        diff_path: '/tmp/team/worktrees/worker-1/.omx/diff.md',
+        full_diff_available: true,
+      };
     case 'requested_by': return 'leader-fixed';
     case 'after_event_id': return 'evt-123';
     case 'wakeable_only': return true;
@@ -247,6 +339,11 @@ function parseStatusTailLines(args: string[]): number {
 export interface ParsedTeamStartArgs {
   parsed: ParsedTeamArgs;
   worktreeMode: WorktreeMode;
+}
+
+function resolveDefaultTeamWorktreeMode(mode: WorktreeMode): WorktreeMode {
+  if (mode.enabled) return mode;
+  return { enabled: true, detached: true, name: null };
 }
 
 function parseTeamApiArgs(args: string[]): {
@@ -1598,7 +1695,7 @@ function renderTeamPaneStatus(
   }
 }
 
-function parseTeamArgs(args: string[]): ParsedTeamArgs {
+function parseTeamArgs(args: string[], cwd: string = process.cwd()): ParsedTeamArgs {
   const tokens = [...args];
   let ralph = false;
   let workerCount = 3;
@@ -1632,15 +1729,29 @@ function parseTeamArgs(args: string[]): ParsedTeamArgs {
     throw new Error('Usage: omx team [ralph] [N:agent-type] "<task description>"');
   }
 
-  const teamName = sanitizeTeamName(slugifyTask(task));
-  return { workerCount, agentType, explicitAgentType, explicitWorkerCount, task, teamName, ralph };
+  const followupContext = resolveApprovedTeamFollowupContext(cwd, task);
+  const effectiveTask = followupContext?.task ?? task;
+  if (followupContext) {
+    if (!explicitWorkerCount) {
+      workerCount = followupContext.workerCount;
+      explicitWorkerCount = followupContext.explicitWorkerCount;
+    }
+    if (!explicitAgentType && followupContext.agentType) {
+      agentType = followupContext.agentType;
+      explicitAgentType = followupContext.explicitAgentType === true;
+    }
+    ralph = ralph || followupContext.ralph;
+  }
+
+  const teamName = sanitizeTeamName(slugifyTask(effectiveTask));
+  return { workerCount, agentType, explicitAgentType, explicitWorkerCount, task: effectiveTask, teamName, ralph };
 }
 
 export function parseTeamStartArgs(args: string[]): ParsedTeamStartArgs {
   const parsedWorktree = parseWorktreeMode(args);
   return {
     parsed: parseTeamArgs(parsedWorktree.remainingArgs),
-    worktreeMode: parsedWorktree.mode,
+    worktreeMode: resolveDefaultTeamWorktreeMode(parsedWorktree.mode),
   };
 }
 
@@ -2006,6 +2117,9 @@ async function renderStartSummary(runtime: TeamRuntime, staffingPlan?: FollowupS
   console.log(`tmux target: ${runtime.sessionName}`);
   console.log(`workers: ${runtime.config.worker_count}`);
   console.log(`agent_type: ${runtime.config.agent_type}`);
+  if (runtime.config.workspace_mode) {
+    console.log(`workspace_mode: ${runtime.config.workspace_mode}`);
+  }
   if (staffingPlan) {
     console.log(`available_agent_types: ${staffingPlan.rosterSummary}`);
     console.log(`staffing_plan: ${staffingPlan.staffingSummary}`);
@@ -2030,6 +2144,7 @@ async function renderStartSummary(runtime: TeamRuntime, staffingPlan?: FollowupS
 export async function teamCommand(args: string[], options: TeamCliOptions = {}): Promise<void> {
   const cwd = process.cwd();
   const parsedWorktree = parseWorktreeMode(args);
+  const worktreeMode = resolveDefaultTeamWorktreeMode(parsedWorktree.mode);
   const teamArgs = parsedWorktree.remainingArgs;
   const [subcommandRaw] = teamArgs;
   const subcommand = (subcommandRaw || '').toLowerCase();
@@ -2119,7 +2234,8 @@ export async function teamCommand(args: string[], options: TeamCliOptions = {}):
       return;
     }
     const tailLines = parseStatusTailLines(teamArgs.slice(2));
-    const paneStatus = await readTeamPaneStatus(await readTeamConfig(name, cwd), cwd, snapshot, tailLines);
+    const config = await readTeamConfig(name, cwd);
+    const paneStatus = await readTeamPaneStatus(config, cwd, snapshot, tailLines);
     if (wantsJson) {
       console.log(JSON.stringify({
         ...buildJsonBase(),
@@ -2128,6 +2244,7 @@ export async function teamCommand(args: string[], options: TeamCliOptions = {}):
         status: 'ok',
         tail_lines: tailLines,
         phase: snapshot.phase,
+        workspace_mode: config?.workspace_mode ?? null,
         dead_workers: snapshot.deadWorkers,
         non_reporting_workers: snapshot.nonReportingWorkers,
         workers: {
@@ -2149,6 +2266,9 @@ export async function teamCommand(args: string[], options: TeamCliOptions = {}):
       return;
     }
     console.log(`team=${snapshot.teamName} phase=${snapshot.phase}`);
+    if (config?.workspace_mode) {
+      console.log(`workspace_mode: ${config.workspace_mode}`);
+    }
     console.log(`workers: total=${snapshot.workers.length} dead=${snapshot.deadWorkers.length} non_reporting=${snapshot.nonReportingWorkers.length}`);
     if (snapshot.deadWorkers.length > 0) {
       console.log(`dead_workers: ${snapshot.deadWorkers.join(' ')}`);
@@ -2310,7 +2430,7 @@ export async function teamCommand(args: string[], options: TeamCliOptions = {}):
     return;
   }
 
-  const parsed = parseTeamArgs(teamArgs);
+  const parsed = parseTeamArgs(teamArgs, cwd);
   const executionPlan = buildTeamExecutionPlan(
     parsed.task,
     parsed.workerCount,
@@ -2334,7 +2454,7 @@ export async function teamCommand(args: string[], options: TeamCliOptions = {}):
     executionPlan.workerCount,
     tasks,
     cwd,
-    { worktreeMode: parsedWorktree.mode, ralph: parsed.ralph },
+    { worktreeMode, ralph: parsed.ralph },
   );
 
   await ensureTeamModeState(effectiveParsed, tasks);

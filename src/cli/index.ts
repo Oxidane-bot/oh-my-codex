@@ -7,7 +7,7 @@ import { execFileSync, spawn } from 'child_process';
 import { basename, dirname, join } from 'path';
 import { existsSync, readFileSync } from 'fs';
 import { constants as osConstants } from 'os';
-import { setup, SETUP_SCOPES, type SetupScope } from './setup.js';
+import { setup, SETUP_SCOPES, SETUP_SKILL_TARGETS, type SetupScope, type SetupSkillTarget } from './setup.js';
 import { uninstall } from './uninstall.js';
 import { version } from './version.js';
 import { tmuxHookCommand } from './tmux-hook.js';
@@ -60,7 +60,6 @@ import {
   enableMouseScrolling,
   isNativeWindows,
   isTmuxAvailable,
-  isWsl2,
 } from '../team/tmux-session.js';
 import { getPackageRoot } from '../utils/package.js';
 import { codexConfigPath } from '../utils/paths.js';
@@ -91,6 +90,7 @@ oh-my-codex (omx) - Multi-agent orchestration for Codex CLI
 
 Usage:
   omx           Launch Codex CLI (HUD auto-attaches only when already inside tmux)
+  omx exec      Run codex exec non-interactively with OMX AGENTS/overlay injection
   omx setup     Install skills, prompts, MCP servers, and scope-specific AGENTS.md
   omx uninstall Remove OMX configuration and clean up installed artifacts
   omx doctor    Check installation health
@@ -145,6 +145,9 @@ Options:
   --verbose     Show detailed output
   --scope       Setup scope for "omx setup" only:
                 user | project
+  --skill-target
+                User-scope skills target for "omx setup" only:
+                codex-home | agents
 `;
 
 const REASONING_KEY = 'model_reasoning_effort';
@@ -164,12 +167,13 @@ const ALLOWED_SHELLS = new Set([
 ]);
 const WINDOWS_DETACHED_BOOTSTRAP_DELAY_MS = 2500;
 
-type CliCommand = 'launch' | 'setup' | 'agents-init' | 'deepinit' | 'uninstall' | 'doctor' | 'ask' | 'explore' | 'sparkshell' | 'team' | 'session' | 'resume' | 'version' | 'tmux-hook' | 'hooks' | 'hud' | 'status' | 'cancel' | 'help' | 'reasoning' | string;
+type CliCommand = 'launch' | 'exec' | 'setup' | 'agents-init' | 'deepinit' | 'uninstall' | 'doctor' | 'ask' | 'explore' | 'sparkshell' | 'team' | 'session' | 'resume' | 'version' | 'tmux-hook' | 'hooks' | 'hud' | 'status' | 'cancel' | 'help' | 'reasoning' | string;
 
 const NESTED_HELP_COMMANDS = new Set<CliCommand>([
   'ask',
   'agents-init',
   'deepinit',
+  'exec',
   'hooks',
   'hud',
   'ralph',
@@ -195,17 +199,31 @@ const LEGACY_SCOPE_MIGRATION_SYNC: Record<string, SetupScope> = {
 };
 
 export function readPersistedSetupScope(cwd: string): SetupScope | undefined {
+  return readPersistedSetupPreferences(cwd)?.scope;
+}
+
+export function readPersistedSetupPreferences(
+  cwd: string,
+): Partial<{ scope: SetupScope; skillTarget: SetupSkillTarget }> | undefined {
   const scopePath = join(cwd, '.omx', 'setup-scope.json');
   if (!existsSync(scopePath)) return undefined;
   try {
-    const parsed = JSON.parse(readFileSync(scopePath, 'utf-8')) as Partial<{ scope: string }>;
+    const parsed = JSON.parse(readFileSync(scopePath, 'utf-8')) as Partial<{ scope: string; skillTarget: string }>;
+    const persisted: Partial<{ scope: SetupScope; skillTarget: SetupSkillTarget }> = {};
     if (typeof parsed.scope === 'string') {
       if (SETUP_SCOPES.includes(parsed.scope as SetupScope)) {
-        return parsed.scope as SetupScope;
+        persisted.scope = parsed.scope as SetupScope;
       }
       const migrated = LEGACY_SCOPE_MIGRATION_SYNC[parsed.scope];
-      if (migrated) return migrated;
+      if (migrated) persisted.scope = migrated;
     }
+    if (
+      typeof parsed.skillTarget === 'string' &&
+      SETUP_SKILL_TARGETS.includes(parsed.skillTarget as SetupSkillTarget)
+    ) {
+      persisted.skillTarget = parsed.skillTarget as SetupSkillTarget;
+    }
+    return Object.keys(persisted).length > 0 ? persisted : undefined;
   } catch (err) {
     process.stderr.write(`[cli/index] operation failed: ${err}\n`);
     // Ignore malformed persisted scope and use defaults.
@@ -246,6 +264,30 @@ export function resolveSetupScopeArg(args: string[]): SetupScope | undefined {
   throw new Error(`Invalid setup scope: ${value}. Expected one of: ${SETUP_SCOPES.join(', ')}`);
 }
 
+export function resolveSetupSkillTargetArg(args: string[]): SetupSkillTarget | undefined {
+  let value: string | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--skill-target') {
+      const next = args[index + 1];
+      if (!next || next.startsWith('-')) {
+        throw new Error(`Missing setup skill target value after --skill-target. Expected one of: ${SETUP_SKILL_TARGETS.join(', ')}`);
+      }
+      value = next;
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('--skill-target=')) {
+      value = arg.slice('--skill-target='.length);
+    }
+  }
+  if (!value) return undefined;
+  if (SETUP_SKILL_TARGETS.includes(value as SetupSkillTarget)) {
+    return value as SetupSkillTarget;
+  }
+  throw new Error(`Invalid setup skill target: ${value}. Expected one of: ${SETUP_SKILL_TARGETS.join(', ')}`);
+}
+
 export function resolveCliInvocation(args: string[]): ResolvedCliInvocation {
   const firstArg = args[0];
   if (firstArg === '--help' || firstArg === '-h') {
@@ -259,6 +301,9 @@ export function resolveCliInvocation(args: string[]): ResolvedCliInvocation {
   }
   if (firstArg === 'launch') {
     return { command: 'launch', launchArgs: args.slice(1) };
+  }
+  if (firstArg === 'exec') {
+    return { command: 'exec', launchArgs: args.slice(1) };
   }
   if (firstArg === 'resume') {
     return { command: 'resume', launchArgs: args.slice(1) };
@@ -274,10 +319,19 @@ export function commandOwnsLocalHelp(command: CliCommand): boolean {
   return NESTED_HELP_COMMANDS.has(command);
 }
 
-export type CodexLaunchPolicy = 'inside-tmux' | 'direct';
+export type CodexLaunchPolicy = 'inside-tmux' | 'detached-tmux' | 'direct';
 
-export function resolveCodexLaunchPolicy(env: NodeJS.ProcessEnv = process.env): CodexLaunchPolicy {
-  return env.TMUX ? 'inside-tmux' : 'direct';
+export function resolveCodexLaunchPolicy(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  tmuxAvailable: boolean = isTmuxAvailable(),
+): CodexLaunchPolicy {
+  if (env.TMUX) return 'inside-tmux';
+  // On macOS, preserve the native terminal paste path for clipboard images.
+  // Detached tmux sessions strip the rich paste payload that Codex consumes,
+  // so image pastes appear to do nothing.
+  if (platform === 'darwin') return 'direct';
+  return tmuxAvailable ? 'detached-tmux' : 'direct';
 }
 
 type ExecFileSyncFailure = NodeJS.ErrnoException & {
@@ -425,7 +479,7 @@ export function buildHudPaneCleanupTargets(existingPaneIds: string[], createdPan
 
 export async function main(args: string[]): Promise<void> {
   const knownCommands = new Set([
-    'launch', 'setup', 'agents-init', 'deepinit', 'uninstall', 'doctor', 'ask', 'explore', 'sparkshell', 'team', 'ralph', 'session', 'resume', 'version', 'tmux-hook', 'hooks', 'hud', 'status', 'cancel', 'help', '--help', '-h',
+    'launch', 'exec', 'setup', 'agents-init', 'deepinit', 'uninstall', 'doctor', 'ask', 'explore', 'sparkshell', 'team', 'ralph', 'session', 'resume', 'version', 'tmux-hook', 'hooks', 'hud', 'status', 'cancel', 'help', '--help', '-h',
   ]);
   const firstArg = args[0];
   const { command, launchArgs } = resolveCliInvocation(args);
@@ -456,6 +510,7 @@ export async function main(args: string[]): Promise<void> {
           dryRun: options.dryRun,
           verbose: options.verbose,
           scope: resolveSetupScopeArg(args.slice(1)),
+          skillTarget: resolveSetupSkillTargetArg(args.slice(1)),
         });
         break;
       case 'agents-init':
@@ -483,6 +538,9 @@ export async function main(args: string[]): Promise<void> {
         break;
       case 'explore':
         await exploreCommand(args.slice(1));
+        break;
+      case 'exec':
+        await execWithOverlay(launchArgs);
         break;
       case 'sparkshell':
         await sparkshellCommand(args.slice(1));
@@ -678,6 +736,68 @@ export async function launchWithHud(args: string[]): Promise<void> {
     runCodex(cwd, normalizedArgs, sessionId, workerSparkModel, codexHomeOverride, notifyTempContractRaw);
   } finally {
     // ── Phase 3: postLaunch ─────────────────────────────────────────────
+    await postLaunch(cwd, sessionId);
+  }
+}
+
+export async function execWithOverlay(args: string[]): Promise<void> {
+  const launchCwd = process.cwd();
+  const parsedWorktree = parseWorktreeMode(args);
+  const notifyTempResult = resolveNotifyTempContract(parsedWorktree.remainingArgs, process.env);
+  const codexHomeOverride = resolveCodexHomeForLaunch(launchCwd, process.env);
+  const normalizedArgs = normalizeCodexLaunchArgs(notifyTempResult.passthroughArgs);
+  let cwd = launchCwd;
+
+  if (parsedWorktree.mode.enabled) {
+    const planned = planWorktreeTarget({
+      cwd: launchCwd,
+      scope: 'launch',
+      mode: parsedWorktree.mode,
+    });
+    const ensured = ensureWorktree(planned);
+    if (ensured.enabled) {
+      cwd = ensured.worktreePath;
+    }
+  }
+
+  const sessionId = `omx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  try {
+    await maybeCheckAndPromptUpdate(cwd);
+  } catch (err) {
+    process.stderr.write(`[cli/index] operation failed: ${err}\n`);
+  }
+
+  try {
+    await maybePromptGithubStar();
+  } catch (err) {
+    process.stderr.write(`[cli/index] operation failed: ${err}\n`);
+  }
+
+  try {
+    await preLaunch(cwd, sessionId, notifyTempResult.contract);
+  } catch (err) {
+    console.error(`[omx] preLaunch warning: ${err instanceof Error ? err.message : err}`);
+  }
+
+  try {
+    const notifyTempContractRaw = notifyTempResult.contract.active
+      ? serializeNotifyTempContract(notifyTempResult.contract)
+      : null;
+    const codexArgs = injectModelInstructionsBypassArgs(
+      cwd,
+      ['exec', ...normalizedArgs],
+      process.env,
+      sessionModelInstructionsPath(cwd, sessionId),
+    );
+    const codexEnvBase = codexHomeOverride
+      ? { ...process.env, CODEX_HOME: codexHomeOverride }
+      : process.env;
+    const codexEnv = notifyTempContractRaw
+      ? { ...codexEnvBase, [OMX_NOTIFY_TEMP_CONTRACT_ENV]: notifyTempContractRaw }
+      : codexEnvBase;
+    runCodexBlocking(cwd, codexArgs, codexEnv);
+  } finally {
     await postLaunch(cwd, sessionId);
   }
 }
@@ -1026,7 +1146,6 @@ export function buildDetachedSessionFinalizeSteps(
   hudPaneId: string | null,
   hookWindowIndex: string | null,
   enableMouse: boolean,
-  wsl2: boolean,
   nativeWindows = false,
 ): DetachedSessionTmuxStep[] {
   const steps: DetachedSessionTmuxStep[] = [];
@@ -1054,9 +1173,6 @@ export function buildDetachedSessionFinalizeSteps(
 
   if (enableMouse) {
     steps.push({ name: 'set-mouse', args: ['set-option', '-t', sessionName, 'mouse', 'on'] });
-    if (wsl2) {
-      steps.push({ name: 'set-wsl-xt', args: ['set-option', '-ga', 'terminal-overrides', ',xterm*:XT'] });
-    }
   }
   steps.push({ name: 'attach-session', args: ['attach-session', '-t', sessionName] });
   return steps;
@@ -1278,7 +1394,7 @@ function runCodex(
         killTmuxPane(paneId);
       }
     }
-  } else if (!isTmuxAvailable()) {
+  } else if (launchPolicy === 'direct') {
     // Detached HUD sessions require tmux. Skip the bootstrap entirely when the
     // binary is unavailable so direct launches do not emit noisy ENOENT logs.
     runCodexBlocking(cwd, launchArgs, codexEnvWithNotify);
@@ -1328,7 +1444,6 @@ function runCodex(
             hudPaneId,
             hookWindowIndex,
             process.env.OMX_MOUSE !== '0',
-            isWsl2(),
             nativeWindows,
           );
           if (nativeWindows && detachedWindowsCodexCmd) {

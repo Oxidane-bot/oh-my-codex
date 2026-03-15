@@ -35,6 +35,7 @@ import {
   type TeamRuntime,
 } from '../runtime.js';
 import { resolveTeamLowComplexityDefaultModel } from '../model-contract.js';
+import { readTeamEvents } from '../state/events.js';
 
 async function initRepo(): Promise<string> {
   const cwd = await mkdtemp(join(tmpdir(), 'omx-runtime-worktree-repo-'));
@@ -1066,8 +1067,10 @@ exit 0
           assert.ok(runtime.config.resize_hook_name);
 
           const tmuxLog = await readFile(tmuxLogPath, 'utf-8');
-          const hudSplitRe = new RegExp(`split-window -v -l ${HUD_TMUX_TEAM_HEIGHT_LINES} -t %1 -d -P -F #\\{pane_id\\}`, 'g');
-          assert.equal(tmuxLog.match(hudSplitRe)?.length ?? 0, 3);
+          const teamHudSplitRe = new RegExp(`split-window -v -f -l ${HUD_TMUX_TEAM_HEIGHT_LINES} -t leader:0 -d -P -F #\\{pane_id\\}`, 'g');
+          const standaloneHudSplitRe = new RegExp(`split-window -v -l ${HUD_TMUX_TEAM_HEIGHT_LINES} -t %1 -d -P -F #\\{pane_id\\}`, 'g');
+          assert.equal(tmuxLog.match(teamHudSplitRe)?.length ?? 0, 2);
+          assert.equal(tmuxLog.match(standaloneHudSplitRe)?.length ?? 0, 1);
           assert.equal(tmuxLog.match(/set-hook -t leader:0 client-resized\[\d+\]/g)?.length ?? 0, 2);
           assert.equal(tmuxLog.match(/set-hook -t leader:0 client-attached\[\d+\]/g)?.length ?? 0, 2);
           assert.equal(tmuxLog.match(/run-shell -b sleep \d+; tmux resize-pane -t %3 -y \d+ >/g)?.length ?? 0, 3);
@@ -1264,6 +1267,115 @@ process.on('SIGTERM', () => process.exit(0));
       else delete process.env.OMX_TEAM_WORKER_LAUNCH_MODE;
       if (typeof prevWorkerCli === 'string') process.env.OMX_TEAM_WORKER_CLI = prevWorkerCli;
       else delete process.env.OMX_TEAM_WORKER_CLI;
+      await rm(repo, { recursive: true, force: true });
+    }
+  });
+
+  it('resumeTeam preserves detached worktree metadata for live prompt workers', async () => {
+    const repo = await initRepo();
+    const binDir = join(repo, 'bin');
+    const fakeCodexPath = join(binDir, 'codex');
+    const logDir = join(repo, 'worker-logs');
+    const envLogPath = join(logDir, 'env.json');
+    await mkdir(binDir, { recursive: true });
+    await writeFile(
+      fakeCodexPath,
+      `#!/usr/bin/env node
+const fs = require('fs');
+const path = require('path');
+const logDir = process.env.OMX_TEST_LOG_DIR;
+fs.mkdirSync(logDir, { recursive: true });
+fs.writeFileSync(path.join(logDir, 'env.json'), JSON.stringify({
+  cwd: process.cwd(),
+  teamStateRoot: process.env.OMX_TEAM_STATE_ROOT || '',
+  worker: process.env.OMX_TEAM_WORKER || '',
+}));
+process.stdin.resume();
+setInterval(() => {}, 1000);
+process.on('SIGTERM', () => process.exit(0));
+`,
+      { mode: 0o755 },
+    );
+
+    const prevPath = process.env.PATH;
+    const prevTmux = process.env.TMUX;
+    const prevLaunchMode = process.env.OMX_TEAM_WORKER_LAUNCH_MODE;
+    const prevWorkerCli = process.env.OMX_TEAM_WORKER_CLI;
+    const prevLogDir = process.env.OMX_TEST_LOG_DIR;
+
+    process.env.PATH = `${binDir}:${prevPath ?? ''}`;
+    delete process.env.TMUX;
+    process.env.OMX_TEAM_WORKER_LAUNCH_MODE = 'prompt';
+    process.env.OMX_TEAM_WORKER_CLI = 'codex';
+    process.env.OMX_TEST_LOG_DIR = logDir;
+
+    let runtime: TeamRuntime | null = null;
+    try {
+      runtime = await withoutTeamWorkerEnv(() =>
+        startTeam(
+          'team-detached-worktree-resume-metadata',
+          'detached worktree resume metadata',
+          'executor',
+          1,
+          [{ subject: 's', description: 'd', owner: 'worker-1' }],
+          repo,
+          { worktreeMode: { enabled: true, detached: true, name: null } },
+        ));
+
+      const originalWorker = runtime.config.workers[0];
+      const originalWorktreePath = originalWorker?.worktree_path;
+      assert.ok(originalWorktreePath, 'worker worktree path should be persisted before resume');
+      assert.equal(originalWorker?.worktree_created, true);
+
+      const envLog = JSON.parse(await waitForFileText(envLogPath, (content) => content.includes('teamStateRoot'))) as {
+        cwd: string;
+        teamStateRoot: string;
+        worker: string;
+      };
+      assert.equal(envLog.cwd, originalWorktreePath);
+      assert.equal(envLog.teamStateRoot, join(repo, '.omx', 'state'));
+
+      const resumed = await resumeTeam(runtime.teamName, repo);
+      assert.ok(resumed, 'resumeTeam should reuse live prompt workers');
+      assert.equal(resumed?.config.workers[0]?.worktree_path, originalWorktreePath);
+      assert.equal(resumed?.config.workers[0]?.worktree_created, true);
+      assert.equal(resumed?.config.workers[0]?.team_state_root, join(repo, '.omx', 'state'));
+
+      const identityPath = join(
+        repo,
+        '.omx',
+        'state',
+        'team',
+        runtime.teamName,
+        'workers',
+        'worker-1',
+        'identity.json',
+      );
+      const identity = JSON.parse(await readFile(identityPath, 'utf-8')) as {
+        worktree_path?: string;
+        worktree_created?: boolean;
+        team_state_root?: string;
+      };
+      assert.equal(identity.worktree_path, originalWorktreePath);
+      assert.equal(identity.worktree_created, true);
+      assert.equal(identity.team_state_root, join(repo, '.omx', 'state'));
+
+      await shutdownTeam(runtime.teamName, repo, { force: true });
+      runtime = null;
+    } finally {
+      if (runtime) {
+        await shutdownTeam(runtime.teamName, repo, { force: true }).catch(() => {});
+      }
+      if (typeof prevPath === 'string') process.env.PATH = prevPath;
+      else delete process.env.PATH;
+      if (typeof prevTmux === 'string') process.env.TMUX = prevTmux;
+      else delete process.env.TMUX;
+      if (typeof prevLaunchMode === 'string') process.env.OMX_TEAM_WORKER_LAUNCH_MODE = prevLaunchMode;
+      else delete process.env.OMX_TEAM_WORKER_LAUNCH_MODE;
+      if (typeof prevWorkerCli === 'string') process.env.OMX_TEAM_WORKER_CLI = prevWorkerCli;
+      else delete process.env.OMX_TEAM_WORKER_CLI;
+      if (typeof prevLogDir === 'string') process.env.OMX_TEST_LOG_DIR = prevLogDir;
+      else delete process.env.OMX_TEST_LOG_DIR;
       await rm(repo, { recursive: true, force: true });
     }
   });
@@ -1648,6 +1760,55 @@ process.on('SIGTERM', () => {
       assert.match(content, /\"type\":\"worker_idle\"/);
     } finally {
       await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('monitorTeam persists integration ledger and cherry-picks unseen worker HEADs once', async () => {
+    const repo = await initRepo();
+    try {
+      execFileSync('git', ['worktree', 'add', '-b', 'worker-1-branch', '../worker-1-wt', 'HEAD'], { cwd: repo, stdio: 'ignore' });
+      const workerPath = join(repo, '..', 'worker-1-wt');
+      await writeFile(join(workerPath, 'worker.txt'), 'from worker\n', 'utf-8');
+      execFileSync('git', ['add', 'worker.txt'], { cwd: workerPath, stdio: 'ignore' });
+      execFileSync('git', ['commit', '-m', 'worker change'], { cwd: workerPath, stdio: 'ignore' });
+      const workerHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: workerPath, encoding: 'utf-8' }).trim();
+
+      await initTeamState('team-integration-ledger', 'integration ledger test', 'executor', 1, repo);
+      const cfg = await readTeamConfig('team-integration-ledger', repo);
+      assert.ok(cfg);
+      if (!cfg) throw new Error('missing team config');
+      cfg.leader_pane_id = '';
+      cfg.workers[0] = {
+        ...cfg.workers[0],
+        assigned_tasks: ['1'],
+        worktree_repo_root: repo,
+        worktree_path: workerPath,
+        worktree_branch: 'worker-1-branch',
+        worktree_detached: false,
+        worktree_created: false,
+      };
+      await saveTeamConfig(cfg, repo);
+
+      await monitorTeam('team-integration-ledger', repo);
+      const firstSnapshot = await readMonitorSnapshot('team-integration-ledger', repo);
+      assert.equal(firstSnapshot?.integrationByWorker?.['worker-1']?.last_seen_head, workerHead);
+      assert.equal(typeof firstSnapshot?.integrationByWorker?.['worker-1']?.last_integrated_head, 'string');
+      assert.equal(firstSnapshot?.integrationByWorker?.['worker-1']?.status, 'idle');
+      assert.equal(typeof firstSnapshot?.integrationByWorker?.['worker-1']?.last_rebased_leader_head, 'string');
+
+      await monitorTeam('team-integration-ledger', repo);
+      const secondSnapshot = await readMonitorSnapshot('team-integration-ledger', repo);
+      assert.equal(typeof secondSnapshot?.integrationByWorker?.['worker-1']?.last_seen_head, 'string');
+      assert.equal(typeof secondSnapshot?.integrationByWorker?.['worker-1']?.last_integrated_head, 'string');
+
+      const events = await readTeamEvents('team-integration-ledger', repo, { wakeableOnly: false });
+      assert.equal(events.filter((event) => event.type === 'worker_cherry_pick_detected').length, 1);
+      assert.equal(events.filter((event) => event.type === 'worker_cherry_pick_applied').length, 1);
+      const leaderMailbox = await listMailboxMessages('team-integration-ledger', 'leader-fixed', repo);
+      assert.equal(leaderMailbox.some((message) => /INTEGRATED: cherry-picked/.test(message.body)), true);
+    } finally {
+      await rm(join(repo, '..', 'worker-1-wt'), { recursive: true, force: true });
+      await rm(repo, { recursive: true, force: true });
     }
   });
 

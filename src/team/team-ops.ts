@@ -41,6 +41,7 @@ export type {
   TeamSummary,
   ShutdownAck,
   TeamMonitorSnapshotState,
+  TeamWorkerIntegrationState,
   TeamPhaseState,
 } from './state.js';
 

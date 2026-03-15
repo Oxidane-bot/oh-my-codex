@@ -31,6 +31,17 @@ interface TeamSummarySnapshot {
   workerTaskByName: Record<string, string>;
 }
 
+export interface TeamWorkerIntegrationState {
+  last_seen_head?: string;
+  last_integrated_head?: string;
+  last_leader_head?: string;
+  last_rebased_leader_head?: string;
+  status?: 'idle' | 'integrated' | 'cherry_pick_conflict' | 'rebase_conflict';
+  conflict_commit?: string;
+  conflict_files?: string[];
+  updated_at?: string;
+}
+
 export interface TeamMonitorSnapshotState {
   taskStatusById: Record<string, string>;
   workerAliveByName: Record<string, boolean>;
@@ -39,6 +50,7 @@ export interface TeamMonitorSnapshotState {
   workerTaskIdByName: Record<string, string>;
   mailboxNotifiedByMessageId: Record<string, string>;
   completedEventTaskIds: Record<string, boolean>;
+  integrationByWorker?: Record<string, TeamWorkerIntegrationState>;
   monitorTimings?: {
     list_tasks_ms: number;
     worker_scan_ms: number;
@@ -220,6 +232,7 @@ export async function readMonitorSnapshot(
       workerTaskIdByName: parsed.workerTaskIdByName ?? {},
       mailboxNotifiedByMessageId: parsed.mailboxNotifiedByMessageId ?? {},
       completedEventTaskIds: parsed.completedEventTaskIds ?? {},
+      integrationByWorker: parsed.integrationByWorker ?? {},
       monitorTimings,
     };
   } catch {

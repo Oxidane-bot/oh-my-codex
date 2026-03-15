@@ -192,6 +192,14 @@ function parseOptionalEventType(value: unknown): TeamEventType | 'worker_idle' |
   return normalized as TeamEventType | 'worker_idle';
 }
 
+function parseOptionalMetadata(value: unknown): Record<string, unknown> | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('metadata must be an object when provided');
+  }
+  return { ...(value as Record<string, unknown>) };
+}
+
 function selectRecentEvents(events: TeamEvent[]): TeamEvent[] {
   return events.slice(Math.max(0, events.length - TEAM_STATE_EVENT_WINDOW));
 }
@@ -781,6 +789,7 @@ export async function executeTeamApiOperation(
           to_worker: args.to_worker as string | undefined,
           worker_count: typeof args.worker_count === 'number' ? args.worker_count : undefined,
           source_type: args.source_type as string | undefined,
+          metadata: parseOptionalMetadata(args.metadata),
         }, cwd);
         return { ok: true, operation, data: { event } };
       }

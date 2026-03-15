@@ -78,7 +78,7 @@ Rules:
 </child_agent_protocol>
 
 <invocation_conventions>
-- `/prompts:name` — invoke a role prompt
+- `/prompts:name` — invoke a role prompt (e.g., `/prompts:critic "challenge this plan"`)
 - `$name` — invoke a workflow skill
 - `/skills` — browse available skills
 </invocation_conventions>

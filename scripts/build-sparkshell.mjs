@@ -9,7 +9,10 @@ const nativeRoot = join(projectRoot, 'native', 'omx-sparkshell');
 const manifestPath = process.env.OMX_SPARKSHELL_MANIFEST ?? join(nativeRoot, 'Cargo.toml');
 const binaryName = platform() === 'win32' ? 'omx-sparkshell.exe' : 'omx-sparkshell';
 const releaseBinaryPath = join(projectRoot, 'target', 'release', binaryName);
-const packagedBinaryDir = join(projectRoot, 'bin', 'native', `${platform()}-${arch()}`);
+const stagedBinaryRoot = process.env.OMX_SPARKSHELL_STAGE_DIR
+  ? join(process.env.OMX_SPARKSHELL_STAGE_DIR, `${platform()}-${arch()}`)
+  : join(projectRoot, 'bin', 'native', `${platform()}-${arch()}`);
+const packagedBinaryDir = stagedBinaryRoot;
 const packagedBinaryPath = join(packagedBinaryDir, binaryName);
 const extraArgs = process.argv.slice(2);
 const args = ['build', '--manifest-path', manifestPath, '--release', ...extraArgs];

@@ -24,6 +24,8 @@ import {
   injectModelInstructionsBypassArgs,
   resolveWorkerSparkModel,
   resolveSetupScopeArg,
+  resolveSetupSkillTargetArg,
+  readPersistedSetupPreferences,
   readPersistedSetupScope,
   resolveCodexHomeForLaunch,
   buildDetachedSessionBootstrapSteps,
@@ -338,6 +340,13 @@ describe('resolveCliInvocation', () => {
     });
   });
 
+  it('resolves exec to non-interactive launch passthrough and forwards trailing args', () => {
+    assert.deepEqual(resolveCliInvocation(['exec', '--model', 'gpt-5', 'say hi']), {
+      command: 'exec',
+      launchArgs: ['--model', 'gpt-5', 'say hi'],
+    });
+  });
+
   it('resolves hooks to hooks command', () => {
     assert.deepEqual(resolveCliInvocation(['hooks']), {
       command: 'hooks',
@@ -416,6 +425,34 @@ describe('resolveSetupScopeArg', () => {
   });
 });
 
+describe('resolveSetupSkillTargetArg', () => {
+  it('returns undefined when skill target is omitted', () => {
+    assert.equal(resolveSetupSkillTargetArg(['--dry-run']), undefined);
+  });
+
+  it('parses --skill-target <value> form', () => {
+    assert.equal(resolveSetupSkillTargetArg(['--skill-target', 'agents']), 'agents');
+  });
+
+  it('parses --skill-target=<value> form', () => {
+    assert.equal(resolveSetupSkillTargetArg(['--skill-target=codex-home']), 'codex-home');
+  });
+
+  it('throws on invalid skill target value', () => {
+    assert.throws(
+      () => resolveSetupSkillTargetArg(['--skill-target', 'workspace']),
+      /Invalid setup skill target: workspace/
+    );
+  });
+
+  it('throws when --skill-target value is missing', () => {
+    assert.throws(
+      () => resolveSetupSkillTargetArg(['--skill-target']),
+      /Missing setup skill target value after --skill-target/
+    );
+  });
+});
+
 describe('project launch scope helpers', () => {
   it('reads persisted setup scope when valid', async () => {
     const wd = await mkdtemp(join(tmpdir(), 'omx-launch-scope-'));
@@ -423,6 +460,23 @@ describe('project launch scope helpers', () => {
       await mkdir(join(wd, '.omx'), { recursive: true });
       await writeFile(join(wd, '.omx', 'setup-scope.json'), JSON.stringify({ scope: 'project' }));
       assert.equal(readPersistedSetupScope(wd), 'project');
+    } finally {
+      await rm(wd, { recursive: true, force: true });
+    }
+  });
+
+  it('reads persisted setup preferences when skill target is present', async () => {
+    const wd = await mkdtemp(join(tmpdir(), 'omx-launch-scope-'));
+    try {
+      await mkdir(join(wd, '.omx'), { recursive: true });
+      await writeFile(
+        join(wd, '.omx', 'setup-scope.json'),
+        JSON.stringify({ scope: 'user', skillTarget: 'agents' })
+      );
+      assert.deepEqual(readPersistedSetupPreferences(wd), {
+        scope: 'user',
+        skillTarget: 'agents',
+      });
     } finally {
       await rm(wd, { recursive: true, force: true });
     }
@@ -485,12 +539,20 @@ describe('project launch scope helpers', () => {
 });
 
 describe('resolveCodexLaunchPolicy', () => {
-  it('launches directly when outside tmux', () => {
-    assert.equal(resolveCodexLaunchPolicy({}), 'direct');
+  it('launches directly on macOS when outside tmux to preserve native image paste', () => {
+    assert.equal(resolveCodexLaunchPolicy({}, 'darwin', true), 'direct');
   });
 
   it('uses tmux-aware launch path when already inside tmux', () => {
-    assert.equal(resolveCodexLaunchPolicy({ TMUX: '/tmp/tmux-1000/default,123,0' }), 'inside-tmux');
+    assert.equal(resolveCodexLaunchPolicy({ TMUX: '/tmp/tmux-1000/default,123,0' }, 'darwin', true), 'inside-tmux');
+  });
+
+  it('uses detached tmux on non-macOS hosts when outside tmux and tmux is available', () => {
+    assert.equal(resolveCodexLaunchPolicy({}, 'linux', true), 'detached-tmux');
+  });
+
+  it('launches directly when tmux is unavailable outside tmux', () => {
+    assert.equal(resolveCodexLaunchPolicy({}, 'linux', false), 'direct');
   });
 });
 
@@ -605,7 +667,7 @@ describe('detached tmux new-session sequencing', () => {
   });
 
   it('buildDetachedSessionFinalizeSteps keeps schedule after split-capture and before attach', () => {
-    const steps = buildDetachedSessionFinalizeSteps('omx-demo', '%12', '3', true, false);
+    const steps = buildDetachedSessionFinalizeSteps('omx-demo', '%12', '3', true);
     const names = steps.map((step) => step.name);
     const attachedIndex = names.indexOf('register-client-attached-reconcile');
     const scheduleIndex = names.indexOf('schedule-delayed-resize');
@@ -619,7 +681,7 @@ describe('detached tmux new-session sequencing', () => {
   });
 
   it('buildDetachedSessionFinalizeSteps uses quiet best-effort tmux resize commands', () => {
-    const steps = buildDetachedSessionFinalizeSteps('omx-demo', '%12', '3', false, false);
+    const steps = buildDetachedSessionFinalizeSteps('omx-demo', '%12', '3', false);
     const registerHook = steps.find((step) => step.name === 'register-resize-hook');
     const schedule = steps.find((step) => step.name === 'schedule-delayed-resize');
     const reconcile = steps.find((step) => step.name === 'reconcile-hud-resize');
@@ -633,11 +695,17 @@ describe('detached tmux new-session sequencing', () => {
   });
 
   it('buildDetachedSessionFinalizeSteps skips detached resize hooks on native Windows', () => {
-    const steps = buildDetachedSessionFinalizeSteps('omx-demo', '%12', '3', true, false, true);
+    const steps = buildDetachedSessionFinalizeSteps('omx-demo', '%12', '3', true, true);
     assert.deepEqual(
       steps.map((step) => step.name),
       ['set-mouse', 'attach-session'],
     );
+  });
+
+  it('buildDetachedSessionFinalizeSteps never appends server-global terminal-overrides', () => {
+    const steps = buildDetachedSessionFinalizeSteps('omx-demo', '%12', '3', true);
+    assert.equal(steps.some((step) => step.name === 'set-wsl-xt'), false);
+    assert.equal(steps.some((step) => step.args.includes('terminal-overrides')), false);
   });
 
   it('buildDetachedSessionRollbackSteps unregisters hooks before killing session', () => {
