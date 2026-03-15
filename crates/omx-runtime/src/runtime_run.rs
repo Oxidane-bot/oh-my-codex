@@ -2813,7 +2813,8 @@ mod tests {
     };
     use crate::test_support::env_lock;
     use std::env;
-    use std::fs::{create_dir_all, read_to_string, write};
+    use std::fs::{create_dir_all, read_to_string, set_permissions, write};
+    use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
 
     #[test]
@@ -3834,6 +3835,69 @@ mod tests {
             .expect("expected ralph state");
         assert!(ralph_state.contains("\"current_phase\":\"cancelled\""));
 
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn shutdown_team_force_tears_down_hud_pane_and_resize_hook() {
+        let _guard = env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let temp =
+            std::env::temp_dir().join(format!("omx-runtime-shutdown-hud-{}", std::process::id()));
+        let fake_bin = temp.join("bin");
+        let tmux_log = temp.join("tmux.log");
+        let _ = std::fs::remove_dir_all(&temp);
+        create_dir_all(&fake_bin).expect("expected fake bin");
+
+        let tmux_path = fake_bin.join("tmux");
+        write(
+            &tmux_path,
+            format!(
+                "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> {}\nexit 0\n",
+                tmux_log.to_string_lossy()
+            ),
+        )
+        .expect("expected tmux stub");
+        set_permissions(&tmux_path, std::fs::Permissions::from_mode(0o755))
+            .expect("expected executable tmux stub");
+
+        let prev_path = env::var("PATH").ok();
+        unsafe {
+            env::set_var(
+                "PATH",
+                format!(
+                    "{}:{}",
+                    fake_bin.display(),
+                    prev_path.clone().unwrap_or_default()
+                ),
+            )
+        };
+
+        let team_dir = temp.join(".omx").join("state").join("team").join("alpha");
+        let tasks_dir = team_dir.join("tasks");
+        let worker_dir = team_dir.join("workers").join("worker-1");
+        create_dir_all(&tasks_dir).expect("expected task dir");
+        create_dir_all(&worker_dir).expect("expected worker dir");
+        write(
+            team_dir.join("config.json"),
+            r#"{"name":"alpha","worker_launch_mode":"interactive","workers":[{"name":"worker-1","pane_id":"%2"}],"tmux_session":"omx-team-alpha","leader_pane_id":"%1","hud_pane_id":"%12","resize_hook_name":"omx_resize_alpha","resize_hook_target":"omx-team-alpha:1"}"#,
+        )
+        .expect("expected team config");
+
+        shutdown_team("alpha", temp.to_string_lossy().as_ref(), true, false)
+            .expect("expected forced shutdown");
+
+        let log = read_to_string(&tmux_log).expect("expected tmux log");
+        assert!(log.contains("kill-pane -t %2"));
+        assert!(log.contains("kill-pane -t %12"));
+        assert!(log.contains("set-hook -u -t omx-team-alpha:1 omx_resize_alpha"));
+
+        if let Some(prev_path) = prev_path {
+            unsafe { env::set_var("PATH", prev_path) };
+        } else {
+            unsafe { env::remove_var("PATH") };
+        }
         let _ = std::fs::remove_dir_all(&temp);
     }
 
