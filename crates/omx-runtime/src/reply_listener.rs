@@ -100,7 +100,12 @@ fn parse_reply_listener_config(raw: &str) -> NativeReplyListenerConfig {
         telegram_enabled: extract_bool(raw, "telegramEnabled").unwrap_or(false),
         telegram_bot_token: extract_string(raw, "telegramBotToken"),
         telegram_chat_id: extract_string(raw, "telegramChatId"),
-        poll_interval_ms: clamp_u64(extract_u64(raw, "pollIntervalMs"), DEFAULT_POLL_INTERVAL_MS, 500, 60_000),
+        poll_interval_ms: clamp_u64(
+            extract_u64(raw, "pollIntervalMs"),
+            DEFAULT_POLL_INTERVAL_MS,
+            500,
+            60_000,
+        ),
         rate_limit_per_minute: clamp_u32(extract_u32(raw, "rateLimitPerMinute"), 10, 1, None),
         max_message_length: clamp_u32(extract_u32(raw, "maxMessageLength"), 500, 1, Some(4_000)),
         include_prefix: extract_bool(raw, "includePrefix").unwrap_or(true),
@@ -579,7 +584,8 @@ fn run_poll_iteration(
         }
     } else if config.telegram_enabled {
         state.errors += 1;
-        state.last_error = Some("telegram polling not yet implemented in native runtime".to_string());
+        state.last_error =
+            Some("telegram polling not yet implemented in native runtime".to_string());
         append_log_line(
             state_dir,
             "[native-runtime] telegram polling not yet implemented in native runtime\n",
