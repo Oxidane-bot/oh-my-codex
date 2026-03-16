@@ -1,0 +1,9 @@
+{
+  "algorithm": "hybrid_sort",
+  "params": {
+    "insertion_threshold": 12,
+    "duplicate_scan_threshold": 0.2,
+    "run_detection_min": 10,
+    "counting_max_value": 255
+  }
+}
