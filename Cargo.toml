@@ -3,8 +3,8 @@ members = [
   "crates/omx-explore",
   "crates/omx-mux",
   "crates/omx-runtime-core",
-  "native/omx-runtime",
-  "native/omx-sparkshell",
+  "crates/omx-runtime",
+  "crates/omx-sparkshell",
 ]
 resolver = "2"
 

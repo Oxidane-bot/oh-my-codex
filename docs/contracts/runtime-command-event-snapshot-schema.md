@@ -54,6 +54,65 @@ This document defines the Rust-owned runtime contract used by the first greenfie
 | `readiness.ready` | Whether the runtime is ready for operator traffic. |
 | `readiness.reasons` | Human-readable blockers when the runtime is not ready. |
 
+## JSON serialization format
+
+Commands use `#[serde(tag = "command")]` — the variant name becomes the `"command"` field, remaining fields are flattened inline:
+
+```json
+{"command":"AcquireAuthority","owner":"w1","lease_id":"l1","leased_until":"2026-03-19T02:00:00Z"}
+{"command":"RenewAuthority","owner":"w1","lease_id":"l2","leased_until":"2026-03-19T03:00:00Z"}
+{"command":"QueueDispatch","request_id":"req-1","target":"worker-2"}
+{"command":"MarkNotified","request_id":"req-1","channel":"tmux"}
+{"command":"MarkDelivered","request_id":"req-1"}
+{"command":"MarkFailed","request_id":"req-1","reason":"timeout"}
+{"command":"RequestReplay","cursor":"cursor-1"}
+{"command":"CaptureSnapshot"}
+```
+
+Events use `#[serde(tag = "event")]` — the variant name becomes the `"event"` field, remaining fields are flattened inline:
+
+```json
+{"event":"AuthorityAcquired","owner":"w1","lease_id":"l1","leased_until":"2026-03-19T02:00:00Z"}
+{"event":"AuthorityRenewed","owner":"w1","lease_id":"l2","leased_until":"2026-03-19T03:00:00Z"}
+{"event":"DispatchQueued","request_id":"req-1","target":"worker-2"}
+{"event":"DispatchNotified","request_id":"req-1","channel":"tmux"}
+{"event":"DispatchDelivered","request_id":"req-1"}
+{"event":"DispatchFailed","request_id":"req-1","reason":"timeout"}
+{"event":"ReplayRequested","cursor":"cursor-1"}
+{"event":"SnapshotCaptured"}
+```
+
+Snapshot fields are flat JSON at the top level, with nested objects for each section:
+
+```json
+{
+  "schema_version": 1,
+  "authority": {
+    "owner": "w1",
+    "lease_id": "l1",
+    "leased_until": "2026-03-19T02:00:00Z",
+    "stale": false,
+    "stale_reason": null
+  },
+  "backlog": {
+    "pending": 1,
+    "notified": 0,
+    "delivered": 0,
+    "failed": 0
+  },
+  "replay": {
+    "cursor": null,
+    "pending_events": 0,
+    "last_replayed_event_id": null,
+    "deferred_leader_notification": false
+  },
+  "readiness": {
+    "ready": true,
+    "reasons": []
+  }
+}
+```
+
 ## Invariants
 - Exactly one semantic authority owner may be active at a time.
 - Dispatches must move `pending -> notified -> delivered|failed`.

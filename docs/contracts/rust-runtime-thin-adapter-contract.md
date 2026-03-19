@@ -26,6 +26,22 @@ Rust-authored compatibility views.
 | `omx doctor --team` | `.omx/state/team/<team>/config.json`, `manifest.v2.json`, `workers/*/status.json`, `workers/*/heartbeat.json`, `.omx/state/hud-state.json` | Manifest-backed tmux/session identity is authoritative when both config and manifest exist. |
 | HUD readers | `.omx/state/session.json`, `.omx/state/sessions/<session>/team-state.json`, `.omx/state/team-state.json`, `.omx/state/ralph-state.json` | Session-scoped files are authoritative when a session is active; root files are compatibility fallback only. |
 
+## Rust-authored runtime files
+
+The `RuntimeEngine` (in `crates/omx-runtime-core/src/engine.rs`) writes the following files via `persist()` and `write_compatibility_view()`:
+
+| File | Written by | Content |
+|---|---|---|
+| `snapshot.json` | `persist()` | Full `RuntimeSnapshot` — `schema_version`, `authority`, `backlog`, `replay`, `readiness` |
+| `events.json` | `persist()` | Append-only event log — array of `RuntimeEvent` values in `#[serde(tag = "event")]` format |
+| `authority.json` | `write_compatibility_view()` | `AuthoritySnapshot` section for TS readers |
+| `backlog.json` | `write_compatibility_view()` | `BacklogSnapshot` counts (`pending`, `notified`, `delivered`, `failed`) for TS readers |
+| `readiness.json` | `write_compatibility_view()` | `ReadinessSnapshot` (`ready`, `reasons`) for TS readers |
+| `replay.json` | `write_compatibility_view()` | `ReplaySnapshot` state for TS readers |
+| `dispatch.json` | `write_compatibility_view()` | Full `DispatchLog` (array of `DispatchRecord` entries) for team status readers |
+
+All files are written atomically to the configured `state_dir`. TS readers must treat these files as read-only; the Rust engine is the sole writer.
+
 ## Thin-adapter rules
 
 1. Compatibility readers must ignore unknown fields and preserve their current

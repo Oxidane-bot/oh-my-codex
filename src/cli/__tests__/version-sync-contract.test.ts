@@ -31,8 +31,8 @@ describe('version sync contract', () => {
       'crates/omx-explore',
       'crates/omx-mux',
       'crates/omx-runtime-core',
-      'native/omx-runtime',
-      'native/omx-sparkshell',
+      'crates/omx-runtime',
+      'crates/omx-sparkshell',
     ]);
     assert.deepEqual(explore.package?.version, { workspace: true });
     assert.deepEqual(runtimeCore.package?.version, { workspace: true });

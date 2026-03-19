@@ -52,7 +52,7 @@ describe('notify-hook team tmux guard bridge', () => {
       await writeFile(join(fakeBinDir, 'tmux'), buildFakeTmux(tmuxLogPath));
       await chmod(join(fakeBinDir, 'tmux'), 0o755);
 
-      const moduleUrl = new URL('../../../scripts/notify-hook/team-tmux-guard.js', import.meta.url).href;
+      const moduleUrl = new URL('../../../dist/scripts/notify-hook/team-tmux-guard.js', import.meta.url).href;
       const result = runSendPaneInputInChild({
         fakeBinDir,
         moduleUrl,
@@ -88,7 +88,7 @@ describe('notify-hook team tmux guard bridge', () => {
       await writeFile(join(fakeBinDir, 'tmux'), buildFakeTmux(tmuxLogPath));
       await chmod(join(fakeBinDir, 'tmux'), 0o755);
 
-      const moduleUrl = new URL('../../../scripts/notify-hook/team-tmux-guard.js', import.meta.url).href;
+      const moduleUrl = new URL('../../../dist/scripts/notify-hook/team-tmux-guard.js', import.meta.url).href;
       const result = runSendPaneInputInChild({
         fakeBinDir,
         moduleUrl,

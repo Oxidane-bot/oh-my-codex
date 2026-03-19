@@ -1,5 +1,19 @@
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
+pub mod authority;
+pub mod dispatch;
+pub mod engine;
+pub mod mailbox;
+pub mod replay;
+
+pub use authority::{AuthorityError, AuthorityLease};
+pub use dispatch::{DispatchError, DispatchLog, DispatchRecord, DispatchStatus};
+pub use engine::{derive_readiness, EngineError, RuntimeEngine};
+pub use mailbox::{MailboxError, MailboxLog, MailboxRecord};
+pub use replay::ReplayState;
+
 pub const RUNTIME_SCHEMA_VERSION: u32 = 1;
 pub const RUNTIME_COMMAND_NAMES: &[&str] = &[
     "acquire-authority",
@@ -10,6 +24,9 @@ pub const RUNTIME_COMMAND_NAMES: &[&str] = &[
     "mark-failed",
     "request-replay",
     "capture-snapshot",
+    "create-mailbox-message",
+    "mark-mailbox-notified",
+    "mark-mailbox-delivered",
 ];
 pub const RUNTIME_EVENT_NAMES: &[&str] = &[
     "authority-acquired",
@@ -20,9 +37,12 @@ pub const RUNTIME_EVENT_NAMES: &[&str] = &[
     "dispatch-failed",
     "replay-requested",
     "snapshot-captured",
+    "mailbox-message-created",
+    "mailbox-notified",
+    "mailbox-delivered",
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WorkerCli {
     Codex,
     Claude,
@@ -46,7 +66,7 @@ pub fn submit_presses_for_worker_cli(worker_cli: &WorkerCli) -> u8 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DispatchTransportKind {
     Tmux,
 }
@@ -59,7 +79,8 @@ impl fmt::Display for DispatchTransportKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "detail")]
 pub enum DispatchOutcomeReason {
     DeliveredConfirmed,
     DeliveredConfirmedActiveTask,
@@ -92,7 +113,8 @@ impl fmt::Display for DispatchOutcomeReason {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status")]
 pub enum QueueTransition {
     KeepPending { reason: DispatchOutcomeReason },
     MarkNotified { reason: DispatchOutcomeReason },
@@ -165,7 +187,8 @@ pub fn classify_dispatch_outcome(
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "command")]
 pub enum RuntimeCommand {
     AcquireAuthority {
         owner: String,
@@ -180,6 +203,7 @@ pub enum RuntimeCommand {
     QueueDispatch {
         request_id: String,
         target: String,
+        metadata: Option<serde_json::Value>,
     },
     MarkNotified {
         request_id: String,
@@ -196,9 +220,22 @@ pub enum RuntimeCommand {
         cursor: Option<String>,
     },
     CaptureSnapshot,
+    CreateMailboxMessage {
+        message_id: String,
+        from_worker: String,
+        to_worker: String,
+        body: String,
+    },
+    MarkMailboxNotified {
+        message_id: String,
+    },
+    MarkMailboxDelivered {
+        message_id: String,
+    },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "event")]
 pub enum RuntimeEvent {
     AuthorityAcquired {
         owner: String,
@@ -213,6 +250,7 @@ pub enum RuntimeEvent {
     DispatchQueued {
         request_id: String,
         target: String,
+        metadata: Option<serde_json::Value>,
     },
     DispatchNotified {
         request_id: String,
@@ -229,9 +267,20 @@ pub enum RuntimeEvent {
         cursor: Option<String>,
     },
     SnapshotCaptured,
+    MailboxMessageCreated {
+        message_id: String,
+        from_worker: String,
+        to_worker: String,
+    },
+    MailboxNotified {
+        message_id: String,
+    },
+    MailboxDelivered {
+        message_id: String,
+    },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeSnapshot {
     pub schema_version: u32,
     pub authority: AuthoritySnapshot,
@@ -272,7 +321,7 @@ impl fmt::Display for RuntimeSnapshot {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuthoritySnapshot {
     pub owner: Option<String>,
     pub lease_id: Option<String>,
@@ -321,7 +370,7 @@ impl fmt::Display for AuthoritySnapshot {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BacklogSnapshot {
     pub pending: u64,
     pub notified: u64,
@@ -372,7 +421,7 @@ impl fmt::Display for BacklogSnapshot {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReplaySnapshot {
     pub cursor: Option<String>,
     pub pending_events: u64,
@@ -413,7 +462,7 @@ impl fmt::Display for ReplaySnapshot {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReadinessSnapshot {
     pub ready: bool,
     pub reasons: Vec<String>,
@@ -555,5 +604,33 @@ mod tests {
                 reason: DispatchOutcomeReason::DeliveredUnconfirmed
             }
         ));
+    }
+
+    #[test]
+    fn snapshot_serializes_to_json() {
+        let snapshot = RuntimeSnapshot::new();
+        let json = serde_json::to_string(&snapshot).unwrap();
+        let deserialized: RuntimeSnapshot = serde_json::from_str(&json).unwrap();
+        assert_eq!(snapshot, deserialized);
+    }
+
+    #[test]
+    fn runtime_command_serializes_to_json() {
+        let cmd = RuntimeCommand::AcquireAuthority {
+            owner: "w1".into(),
+            lease_id: "l1".into(),
+            leased_until: "2026-03-19T02:00:00Z".into(),
+        };
+        let json = serde_json::to_string(&cmd).unwrap();
+        let deserialized: RuntimeCommand = serde_json::from_str(&json).unwrap();
+        assert_eq!(cmd, deserialized);
+    }
+
+    #[test]
+    fn runtime_event_serializes_to_json() {
+        let event = RuntimeEvent::SnapshotCaptured;
+        let json = serde_json::to_string(&event).unwrap();
+        let deserialized: RuntimeEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, deserialized);
     }
 }
