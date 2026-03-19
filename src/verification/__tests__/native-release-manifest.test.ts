@@ -57,7 +57,7 @@ describe('native release manifest generator', () => {
 
       const outputPath = join(root, 'native-release-manifest.json');
       const result = spawnSync(process.execPath, [
-        join(process.cwd(), 'scripts', 'generate-native-release-manifest.mjs'),
+        join(process.cwd(), 'dist', 'scripts', 'generate-native-release-manifest.js'),
         '--plan',
         planPath,
         '--artifacts-dir',
