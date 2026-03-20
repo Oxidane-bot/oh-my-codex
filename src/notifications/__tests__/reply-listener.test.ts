@@ -2,6 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import {
+  captureReplyAcknowledgementSummary,
+  formatReplyAcknowledgement,
   sanitizeReplyInput,
   isReplyListenerProcess,
   normalizeReplyListenerConfig,
@@ -158,5 +160,64 @@ describe('normalizeReplyListenerConfig', () => {
 
     assert.equal(normalized.telegramEnabled, true);
     assert.equal(normalized.discordEnabled, false);
+  });
+});
+
+
+describe('captureReplyAcknowledgementSummary', () => {
+  it('captures a cleaned recent-output summary via tmux-tail parsing', () => {
+    const summary = captureReplyAcknowledgementSummary('%9', {
+      capturePaneContentImpl: (paneId, lines) => {
+        assert.equal(paneId, '%9');
+        assert.equal(lines, 200);
+        return [
+          '● spinner',
+          'Meaningful output line',
+          '  continuation line',
+          '',
+        ].join('\n');
+      },
+    });
+
+    assert.equal(summary, 'Meaningful output line\n  continuation line');
+  });
+
+  it('returns null when the captured pane tail has no meaningful lines', () => {
+    const summary = captureReplyAcknowledgementSummary('%9', {
+      capturePaneContentImpl: () => '● spinner\nctrl+o to expand',
+    });
+
+    assert.equal(summary, null);
+  });
+
+  it('truncates oversized summaries without cutting the acknowledgment prefix logic', () => {
+    const longLine = 'x'.repeat(900);
+    const summary = captureReplyAcknowledgementSummary('%9', {
+      capturePaneContentImpl: () => longLine,
+      parseTmuxTailImpl: () => longLine,
+    });
+
+    assert.equal(summary?.length, 700);
+    assert.ok(summary?.endsWith('…'));
+  });
+});
+
+describe('formatReplyAcknowledgement', () => {
+  it('includes recent output when a summary is available', () => {
+    const message = formatReplyAcknowledgement('Line 1\nLine 2');
+
+    assert.equal(
+      message,
+      'Injected into Codex CLI session.\n\nRecent output:\nLine 1\nLine 2',
+    );
+  });
+
+  it('falls back when no summary is available', () => {
+    const message = formatReplyAcknowledgement(null);
+
+    assert.equal(
+      message,
+      'Injected into Codex CLI session.\n\nRecent output summary unavailable.',
+    );
   });
 });
