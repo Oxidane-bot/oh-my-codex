@@ -1027,6 +1027,31 @@ describe('team state', () => {
     }
   });
 
+  it('sendDirectMessage reuses identical undelivered messages instead of appending duplicates', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'omx-team-mailbox-'));
+    try {
+      await initTeamState('team-msg-dedupe', 't', 'executor', 2, cwd);
+      const first = await sendDirectMessage('team-msg-dedupe', 'worker-1', 'leader-fixed', 'same-body', cwd);
+      const second = await sendDirectMessage('team-msg-dedupe', 'worker-1', 'leader-fixed', 'same-body', cwd);
+
+      assert.equal(second.message_id, first.message_id);
+
+      const mailbox = await listMailboxMessages('team-msg-dedupe', 'leader-fixed', cwd);
+      assert.equal(mailbox.length, 1);
+      assert.equal(mailbox[0]?.body, 'same-body');
+
+      const delivered = await markMessageDelivered('team-msg-dedupe', 'leader-fixed', first.message_id, cwd);
+      assert.equal(delivered, true);
+
+      const third = await sendDirectMessage('team-msg-dedupe', 'worker-1', 'leader-fixed', 'same-body', cwd);
+      assert.notEqual(third.message_id, first.message_id);
+      const mailboxAfter = await listMailboxMessages('team-msg-dedupe', 'leader-fixed', cwd);
+      assert.equal(mailboxAfter.length, 2);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('writeTaskApproval writes record and emits approval_decision event', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'omx-team-approval-'));
     try {

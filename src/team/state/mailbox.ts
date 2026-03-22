@@ -42,32 +42,53 @@ export async function sendDirectMessage(
   body: string,
   deps: MailboxDeps,
 ): Promise<TeamMailboxMessage> {
-  // Dual-write: Rust bridge (non-fatal) + TS file (canonical during cutover)
-  const msgId = randomUUID();
-  if (isBridgeEnabled()) {
-    try { getDefaultBridge(deps.cwd).execCommand({ command: 'CreateMailboxMessage', message_id: msgId, from_worker: fromWorker, to_worker: toWorker, body }); } catch {}
-  }
-
-  const msg: TeamMailboxMessage = {
-    message_id: msgId,
-    from_worker: fromWorker,
-    to_worker: toWorker,
-    body,
-    created_at: new Date().toISOString(),
-  };
+  let created = false;
+  let msg: TeamMailboxMessage | null = null;
 
   await deps.withMailboxLock(deps.teamName, toWorker, deps.cwd, async () => {
     const mailbox = await deps.readMailbox(deps.teamName, toWorker, deps.cwd);
+    const existing = mailbox.messages.find((candidate) =>
+      candidate.from_worker === fromWorker
+      && candidate.to_worker === toWorker
+      && candidate.body === body
+      && !candidate.delivered_at,
+    );
+    if (existing) {
+      msg = existing;
+      return;
+    }
+
+    // Dual-write: Rust bridge (non-fatal) + TS file (canonical during cutover)
+    const msgId = randomUUID();
+    if (isBridgeEnabled()) {
+      try { getDefaultBridge(deps.cwd).execCommand({ command: 'CreateMailboxMessage', message_id: msgId, from_worker: fromWorker, to_worker: toWorker, body }); } catch {}
+    }
+
+    msg = {
+      message_id: msgId,
+      from_worker: fromWorker,
+      to_worker: toWorker,
+      body,
+      created_at: new Date().toISOString(),
+    };
     mailbox.messages.push(msg);
     await deps.writeMailbox(deps.teamName, mailbox, deps.cwd);
+    created = true;
   });
 
-  await deps.appendTeamEvent(
-    deps.teamName,
-    { type: 'message_received', worker: toWorker, task_id: undefined, message_id: msg.message_id, reason: undefined },
-    deps.cwd,
-  );
-  return msg;
+  if (!msg) {
+    throw new Error('failed_to_persist_mailbox_message');
+  }
+  const persistedMessage = msg as TeamMailboxMessage;
+
+  if (created) {
+    await deps.appendTeamEvent(
+      deps.teamName,
+      { type: 'message_received', worker: toWorker, task_id: undefined, message_id: persistedMessage.message_id, reason: undefined },
+      deps.cwd,
+    );
+  }
+  return persistedMessage;
 }
 
 export async function broadcastMessage(

@@ -199,6 +199,15 @@ interface QueueDirectMessageParams {
 
 export async function queueDirectMailboxMessage(params: QueueDirectMessageParams): Promise<DispatchOutcome> {
   const message = await sendDirectMessage(params.teamName, params.fromWorker, params.toWorker, params.body, params.cwd);
+  if (message.notified_at && !message.delivered_at) {
+    return {
+      ok: true,
+      transport: params.toWorker === 'leader-fixed' ? 'mailbox' : fallbackTransportForPreference(params.transportPreference),
+      reason: 'existing_message_already_notified',
+      message_id: message.message_id,
+      to_worker: params.toWorker,
+    };
+  }
   const queued = await enqueueDispatchRequest(
     params.teamName,
     {

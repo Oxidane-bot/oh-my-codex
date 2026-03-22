@@ -122,6 +122,53 @@ describe('mcp-comm', () => {
     }
   });
 
+  it('queueDirectMailboxMessage does not create a new dispatch for an already-notified identical message', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'omx-mcp-comm-'));
+    try {
+      await initTeamState('alpha-dedupe', 'task', 'executor', 1, cwd);
+
+      const first = await queueDirectMailboxMessage({
+        teamName: 'alpha-dedupe',
+        fromWorker: 'worker-1',
+        toWorker: 'leader-fixed',
+        body: 'same-body',
+        triggerMessage: 'check mailbox',
+        cwd,
+        transportPreference: 'transport_direct',
+        fallbackAllowed: false,
+        notify: async () => ({ ok: true, transport: 'mailbox', reason: 'leader_mailbox_notified' }),
+      });
+
+      assert.equal(first.ok, true);
+      assert.equal(first.reason, 'leader_mailbox_notified');
+
+      const second = await queueDirectMailboxMessage({
+        teamName: 'alpha-dedupe',
+        fromWorker: 'worker-1',
+        toWorker: 'leader-fixed',
+        body: 'same-body',
+        triggerMessage: 'check mailbox',
+        cwd,
+        transportPreference: 'transport_direct',
+        fallbackAllowed: false,
+        notify: async () => {
+          throw new Error('should_not_notify_twice');
+        },
+      });
+
+      assert.equal(second.ok, true);
+      assert.equal(second.reason, 'existing_message_already_notified');
+
+      const mailbox = await listMailboxMessages('alpha-dedupe', 'leader-fixed', cwd);
+      assert.equal(mailbox.length, 1);
+
+      const requests = await listDispatchRequests('alpha-dedupe', cwd, { kind: 'mailbox', to_worker: 'leader-fixed' });
+      assert.equal(requests.length, 1);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('queueBroadcastMailboxMessage notifies and marks notified per recipient', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'omx-mcp-comm-'));
     try {

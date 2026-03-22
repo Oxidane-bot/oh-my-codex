@@ -3458,6 +3458,21 @@ esac
     }
   });
 
+  it('sendWorkerMessage dedupes identical undelivered leader-fixed messages', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'omx-runtime-'));
+    try {
+      await initTeamState('team-leader-dedupe', 'leader mailbox dedupe test', 'executor', 1, cwd);
+      await sendWorkerMessage('team-leader-dedupe', 'worker-1', 'leader-fixed', 'INTEGRATED: same-body', cwd);
+      await sendWorkerMessage('team-leader-dedupe', 'worker-1', 'leader-fixed', 'INTEGRATED: same-body', cwd);
+
+      const messages = await listMailboxMessages('team-leader-dedupe', 'leader-fixed', cwd);
+      assert.equal(messages.length, 1);
+      assert.equal(messages[0]?.body, 'INTEGRATED: same-body');
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('sendWorkerMessage hook-preferred path persists leader mailbox guidance when leader pane exists', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'omx-runtime-leader-inject-'));
     try {
