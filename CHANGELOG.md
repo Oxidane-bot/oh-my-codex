@@ -4,6 +4,34 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.11.9] - 2026-03-25
+
+Patch release for deeper deep-interview / ralplan coordination, setup repair, and safer live team supervision after `0.11.8`.
+
+### Added
+- **Live ralplan state visibility** — consensus planning now exposes observable runtime state so the pipeline, HUD, and attached guidance can reflect active ralplan progress more faithfully. (PR [#1060](https://github.com/Yeachan-Heo/oh-my-codex/pull/1060))
+- **Analyze skill trace refresh** — the shipped analyze skill now follows the OmC trace methodology with restored execution-policy contract wording, improving investigation guidance. (direct commits `fa01cb5`, `c0a0e1a`)
+
+### Fixed
+- **Deep-interview lock suppresses tmux-pane nudges** — active deep-interview lock state now blocks fallback tmux-pane nudges, and planning handoff applies stronger deep-interview pressure before execution can proceed. (PRs [#1062](https://github.com/Yeachan-Heo/oh-my-codex/pull/1062), [#1058](https://github.com/Yeachan-Heo/oh-my-codex/pull/1058))
+- **Setup stays compatible with Codex-managed TUI configs** — rerunning setup no longer rebreaks managed TUI sections, while explore-routing defaults remain aligned with setup guidance. (PRs [#1048](https://github.com/Yeachan-Heo/oh-my-codex/pull/1048), [#1053](https://github.com/Yeachan-Heo/oh-my-codex/pull/1053))
+- **HUD stateful-mode visibility restored** — active stateful modes are visible in the HUD again instead of disappearing during live sessions. (PR [#1055](https://github.com/Yeachan-Heo/oh-my-codex/pull/1055))
+- **Live worker supervision remains resilient** — fallback orchestration now stays alive while team workers are still active, and team flows auto-accept the Claude bypass prompt when required. (PR [#1043](https://github.com/Yeachan-Heo/oh-my-codex/pull/1043), direct commit `3f2eb67`)
+
+### Changed
+- **Maintenance refresh** — dev dependency baselines now use `c8@11.0.0` and `@types/node@25.5.0`, and the README adds a Star History chart. (PRs [#1049](https://github.com/Yeachan-Heo/oh-my-codex/pull/1049), [#1051](https://github.com/Yeachan-Heo/oh-my-codex/pull/1051); docs commit `ed96d42`)
+- **Release metadata sync** — Node and Cargo package metadata are bumped to `0.11.9` for this patch release.
+
+### Verified
+- `npm run build`
+- `npm run lint`
+- `npm run check:no-unused`
+- `node --test --test-reporter=spec dist/cli/__tests__/version-sync-contract.test.js`
+- `node --test --test-reporter=spec dist/cli/__tests__/setup-refresh.test.js dist/cli/__tests__/setup-scope.test.js dist/cli/__tests__/doctor-warning-copy.test.js`
+- `node --test --test-reporter=spec dist/hooks/__tests__/explore-routing.test.js dist/hooks/__tests__/explore-sparkshell-guidance-contract.test.js dist/hooks/__tests__/deep-interview-contract.test.js dist/hooks/__tests__/notify-fallback-watcher.test.js dist/hooks/__tests__/notify-hook-auto-nudge.test.js dist/hooks/__tests__/agents-overlay.test.js`
+- `node --test --test-reporter=spec dist/hud/__tests__/index.test.js dist/hud/__tests__/render.test.js dist/hud/__tests__/state.test.js`
+- `node --test --test-reporter=spec dist/pipeline/__tests__/stages.test.js dist/ralplan/__tests__/runtime.test.js`
+
 ## [0.11.8] - 2026-03-23
 
 Hotfix release for deep-interview nudge suppression and duplicate fresh-leader nudge prevention.
