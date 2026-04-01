@@ -214,7 +214,7 @@ describe("omx setup scope behavior", () => {
       assert.match(configToml, /^\[env\]$/m);
       assert.match(configToml, /^USE_OMX_EXPLORE_CMD = "1"$/m);
       const agentsMd = await readFile(agentsMdPath, "utf-8");
-      assert.match(agentsMd, /\.\/\.codex\/prompts/);
+      assert.match(agentsMd, /prompts\/\*\.md/);
       assert.match(agentsMd, /\.\/\.codex\/skills/);
       const persistedScope = JSON.parse(await readFile(scopeFile, "utf-8")) as {
         scope: string;
