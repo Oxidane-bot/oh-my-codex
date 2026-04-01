@@ -233,6 +233,15 @@ HUD-compatible, records controller decisions alongside derived pipeline stage re
 supports resume from the last incomplete step. See `src/autopilot/controller.ts` and
 `src/pipeline/orchestrator.ts` for the full API surface.
 
+## Runtime-controller milestone
+
+For the approved runtime-controller milestone, keep `$autopilot` as the stable user entry while
+shifting internal ownership toward a controller loop that can choose `plan`, `execute`, `verify`,
+`replan`, or `finish` from persisted state. Treat `src/pipeline/` as compatibility plumbing around
+that controller, and reuse `src/modes/base.ts`, `src/team/followup-planner.ts`, `src/team/runtime.ts`,
+and `src/pipeline/stages/*` as the primary brownfield seams instead of creating a second orchestration
+stack. See `docs/contracts/autopilot-runtime-controller-contract.md` for the structural-fit contract.
+
 ## Troubleshooting
 
 **Stuck in a phase?** Check TODO list for blocked tasks, run `state_read({mode: "autopilot"})`, or cancel and resume.
