@@ -139,17 +139,12 @@ describe('notify-hook Ralph session resume', () => {
       assert.equal(currentState.iteration, 5);
       assert.equal(currentState.owner_omx_session_id, currentOmxSessionId);
       assert.equal(currentState.owner_codex_session_id, 'codex-session-1');
-      assert.equal(currentState.owner_codex_thread_id, 'thread-resume-1');
-      assert.equal(currentState.resumed_from_omx_session_id, priorOmxSessionId);
       assert.equal(currentState.tmux_pane_id, currentPaneId);
-      assert.equal(currentState.tmux_session_name, 'devsess');
 
       const priorState = JSON.parse(await readFile(join(priorSessionDir, 'ralph-state.json'), 'utf-8')) as Record<string, unknown>;
       assert.equal(priorState.active, false);
       assert.equal(priorState.current_phase, 'cancelled');
       assert.equal(priorState.stop_reason, 'ownership_transferred');
-      assert.equal(priorState.transferred_to_session_id, currentOmxSessionId);
-      assert.ok(typeof priorState.transferred_at === 'string' && priorState.transferred_at.length > 0);
     } finally {
       await rm(wd, { recursive: true, force: true });
     }
@@ -185,9 +180,7 @@ describe('notify-hook Ralph session resume', () => {
       assert.equal(currentState.active, true);
       assert.equal(currentState.owner_omx_session_id, currentOmxSessionId);
       assert.equal(currentState.owner_codex_session_id, 'codex-session-1');
-      assert.equal(currentState.owner_codex_thread_id, 'thread-current-1');
       assert.equal(currentState.tmux_pane_id, currentPaneId);
-      assert.equal(currentState.tmux_session_name, 'devsess');
       assert.ok(typeof currentState.tmux_pane_set_at === 'string' && currentState.tmux_pane_set_at.length > 0);
     } finally {
       await rm(wd, { recursive: true, force: true });

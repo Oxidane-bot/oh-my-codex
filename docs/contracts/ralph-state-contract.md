@@ -14,17 +14,11 @@ Ralph runtime state is stored at `.omx/state/{scope}/ralph-state.json` and MUST 
 - Optional ownership fields:
   - `owner_omx_session_id`
   - `owner_codex_session_id`
-  - `owner_codex_thread_id`
 - Optional tmux anchor fields:
   - `tmux_pane_id`
   - `tmux_pane_set_at`
-  - `tmux_session_name`
-- Optional migration/audit fields:
-  - `resumed_from_omx_session_id`
-  - `resumed_at`
+- Optional stop/audit fields:
   - `stop_reason`
-  - `transferred_to_session_id`
-  - `transferred_at`
 
 Ralph remains a standalone mode. Other workflows may start Ralph later as an
 explicit follow-up, but there is no built-in `omx team ralph ...` linked launch

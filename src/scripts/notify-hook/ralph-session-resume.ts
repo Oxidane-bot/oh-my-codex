@@ -1,7 +1,7 @@
 import { existsSync } from 'fs';
 import { mkdir, readFile, readdir, rename, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
-import { captureTmuxPaneFromEnv, captureTmuxSessionNameFromPane } from '../../state/mode-state-context.js';
+import { captureTmuxPaneFromEnv } from '../../state/mode-state-context.js';
 import { resolveCodexPane } from '../tmux-hook-engine.js';
 import { safeString } from './utils.js';
 
@@ -11,7 +11,6 @@ const RALPH_TERMINAL_PHASES = new Set(['complete', 'failed', 'cancelled']);
 interface RalphSessionResumeParams {
   stateDir: string;
   payloadSessionId: string;
-  payloadThreadId?: string;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -64,16 +63,11 @@ function bindCurrentPane(state: Record<string, unknown>, nowIso: string, env: No
   const paneId = resolveCodexPane() || captureTmuxPaneFromEnv(env);
   if (!paneId) return state;
 
-  const next: Record<string, unknown> = {
+  return {
     ...state,
     tmux_pane_id: paneId,
     tmux_pane_set_at: nowIso,
   };
-  const sessionName = captureTmuxSessionNameFromPane(paneId);
-  if (sessionName) {
-    next.tmux_session_name = sessionName;
-  }
-  return next;
 }
 
 async function scanMatchingRalphCandidates(
@@ -105,7 +99,6 @@ async function scanMatchingRalphCandidates(
 export async function reconcileRalphSessionResume({
   stateDir,
   payloadSessionId,
-  payloadThreadId,
   env = process.env,
 }: RalphSessionResumeParams): Promise<RalphSessionResumeResult> {
   const currentOmxSessionId = await readCurrentOmxSessionId(stateDir);
@@ -134,14 +127,9 @@ export async function reconcileRalphSessionResume({
       updated.owner_codex_session_id = payloadSessionId;
       changed = true;
     }
-    if (payloadThreadId && !safeString(updated.owner_codex_thread_id).trim()) {
-      updated.owner_codex_thread_id = payloadThreadId;
-      changed = true;
-    }
     const currentPaneId = resolveCodexPane() || captureTmuxPaneFromEnv(env);
     const currentStatePaneId = safeString(updated.tmux_pane_id).trim();
-    const currentSessionName = safeString(updated.tmux_session_name).trim();
-    if (currentPaneId && (currentPaneId !== currentStatePaneId || !currentSessionName)) {
+    if (currentPaneId && currentPaneId !== currentStatePaneId) {
       Object.assign(updated, bindCurrentPane(updated, nowIso, env));
       changed = true;
     }
@@ -194,14 +182,9 @@ export async function reconcileRalphSessionResume({
     ...source.state,
     owner_omx_session_id: currentOmxSessionId,
     owner_codex_session_id: normalizedPayloadSessionId,
-    ...(payloadThreadId ? { owner_codex_thread_id: payloadThreadId } : {}),
-    resumed_from_omx_session_id: safeString(source.state.owner_omx_session_id).trim() || source.sessionId,
-    resumed_at: nowIso,
   }, nowIso, env);
   delete nextState.completed_at;
   delete nextState.stop_reason;
-  delete nextState.transferred_to_session_id;
-  delete nextState.transferred_at;
 
   const previousState: Record<string, unknown> = {
     ...source.state,
@@ -209,8 +192,6 @@ export async function reconcileRalphSessionResume({
     current_phase: 'cancelled',
     completed_at: nowIso,
     stop_reason: 'ownership_transferred',
-    transferred_to_session_id: currentOmxSessionId,
-    transferred_at: nowIso,
   };
 
   await writeJsonAtomic(currentRalphPath, nextState);
