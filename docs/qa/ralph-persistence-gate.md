@@ -15,7 +15,7 @@ CI/release validation MUST fail when any required scenario below is missing or f
 
 | ID | Scenario | Required evidence | Status |
 |---|---|---|---|
-| V1 | Session-scoped Ralph lifecycle + same-session auto-resume ownership transfer | `src/cli/__tests__/session-scoped-runtime.test.ts` + `src/mcp/__tests__/trace-server.test.ts` + `src/hooks/__tests__/notify-hook-session-scope.test.ts` | [x] |
+| V1 | Session-scoped Ralph lifecycle + same-session ownership transfer | `src/cli/__tests__/session-scoped-runtime.test.ts` + `src/mcp/__tests__/trace-server.test.ts` + `src/hooks/__tests__/notify-hook-session-scope.test.ts` | [x] |
 | V2 | Root fallback compatibility (HUD) | `src/hud/__tests__/state.test.ts` | [x] |
 | V3 | Canonical PRD/progress precedence + migration | `src/ralph/__tests__/persistence.test.ts` | [x] |
 | V4 | Phase vocabulary enforcement | `src/mcp/__tests__/state-server-ralph-phase.test.ts` | [x] |
@@ -28,7 +28,7 @@ CI/release validation MUST fail when any required scenario below is missing or f
 
 ### Explicit scenario checklist
 
-- [x] V1 Session-scoped Ralph lifecycle + same-session auto-resume ownership transfer
+- [x] V1 Session-scoped Ralph lifecycle + same-session ownership transfer
 - [x] V2 Root fallback compatibility (HUD)
 - [x] V3 Canonical PRD/progress precedence + migration
 - [x] V4 Phase vocabulary enforcement
