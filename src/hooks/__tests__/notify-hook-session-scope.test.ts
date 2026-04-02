@@ -1,12 +1,27 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, writeFile, readFile } from 'fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { tmpdir } from 'os';
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { VISUAL_NEXT_ACTIONS_LIMIT } from '../../visual/constants.js';
+
+function runNotifyHook(payload: Record<string, unknown>) {
+  const testDir = dirname(fileURLToPath(import.meta.url));
+  const repoRoot = join(testDir, '..', '..', '..');
+  return spawnSync(process.execPath, ['dist/scripts/notify-hook.js', JSON.stringify(payload)], {
+    cwd: repoRoot,
+    encoding: 'utf-8',
+    env: {
+      ...process.env,
+      OMX_TEAM_WORKER: '',
+      TMUX: '',
+      TMUX_PANE: '',
+    },
+  });
+}
 
 describe('notify-hook session-scoped iteration updates', () => {
   it('increments iteration for active session-scoped mode states', async () => {
@@ -20,26 +35,13 @@ describe('notify-hook session-scoped iteration updates', () => {
       await writeFile(join(stateDir, 'session.json'), JSON.stringify({ session_id: sessionId }));
       await writeFile(join(sessionScopedDir, 'team-state.json'), JSON.stringify({ active: true, iteration: 0 }));
 
-      const payload = {
+      const result = runNotifyHook({
         cwd: wd,
         type: 'agent-turn-complete',
         thread_id: 'th',
         turn_id: 'tu',
         input_messages: [],
         last_assistant_message: 'ok',
-      };
-
-      const testDir = dirname(fileURLToPath(import.meta.url));
-      const repoRoot = join(testDir, '..', '..', '..');
-      const result = spawnSync(process.execPath, ['dist/scripts/notify-hook.js', JSON.stringify(payload)], {
-        cwd: repoRoot,
-        encoding: 'utf-8',
-        env: {
-          ...process.env,
-          OMX_TEAM_WORKER: '',
-          TMUX: '',
-          TMUX_PANE: '',
-        },
       });
       assert.equal(result.status, 0, result.stderr || result.stdout);
 
@@ -60,36 +62,20 @@ describe('notify-hook session-scoped iteration updates', () => {
       await mkdir(sessionScopedDir, { recursive: true });
 
       await writeFile(join(stateDir, 'session.json'), JSON.stringify({ session_id: sessionId }));
-      await writeFile(
-        join(sessionScopedDir, 'ralph-state.json'),
-        JSON.stringify({
-          active: true,
-          iteration: 1,
-          max_iterations: 2,
-          current_phase: 'executing',
-        })
-      );
+      await writeFile(join(sessionScopedDir, 'ralph-state.json'), JSON.stringify({
+        active: true,
+        iteration: 1,
+        max_iterations: 2,
+        current_phase: 'executing',
+      }));
 
-      const payload = {
+      const result = runNotifyHook({
         cwd: wd,
         type: 'agent-turn-complete',
         thread_id: 'th2',
         turn_id: 'tu2',
         input_messages: [],
         last_assistant_message: 'ok',
-      };
-
-      const testDir = dirname(fileURLToPath(import.meta.url));
-      const repoRoot = join(testDir, '..', '..', '..');
-      const result = spawnSync(process.execPath, ['dist/scripts/notify-hook.js', JSON.stringify(payload)], {
-        cwd: repoRoot,
-        encoding: 'utf-8',
-        env: {
-          ...process.env,
-          OMX_TEAM_WORKER: '',
-          TMUX: '',
-          TMUX_PANE: '',
-        },
       });
       assert.equal(result.status, 0, result.stderr || result.stdout);
 
@@ -117,36 +103,20 @@ describe('notify-hook session-scoped iteration updates', () => {
       await mkdir(sessionScopedDir, { recursive: true });
 
       await writeFile(join(stateDir, 'session.json'), JSON.stringify({ session_id: sessionId }));
-      await writeFile(
-        join(sessionScopedDir, 'team-state.json'),
-        JSON.stringify({
-          active: true,
-          iteration: 1,
-          max_iterations: 2,
-          current_phase: 'executing',
-        })
-      );
+      await writeFile(join(sessionScopedDir, 'team-state.json'), JSON.stringify({
+        active: true,
+        iteration: 1,
+        max_iterations: 2,
+        current_phase: 'executing',
+      }));
 
-      const payload = {
+      const result = runNotifyHook({
         cwd: wd,
         type: 'agent-turn-complete',
         thread_id: 'th2',
         turn_id: 'tu2',
         input_messages: [],
         last_assistant_message: 'ok',
-      };
-
-      const testDir = dirname(fileURLToPath(import.meta.url));
-      const repoRoot = join(testDir, '..', '..', '..');
-      const result = spawnSync(process.execPath, ['dist/scripts/notify-hook.js', JSON.stringify(payload)], {
-        cwd: repoRoot,
-        encoding: 'utf-8',
-        env: {
-          ...process.env,
-          OMX_TEAM_WORKER: '',
-          TMUX: '',
-          TMUX_PANE: '',
-        },
       });
       assert.equal(result.status, 0, result.stderr || result.stdout);
 
@@ -162,11 +132,36 @@ describe('notify-hook session-scoped iteration updates', () => {
     }
   });
 
+  it('writes hud progress timestamps for leader turns', async () => {
+    const wd = await mkdtemp(join(tmpdir(), 'omx-notify-hud-progress-'));
+    try {
+      const stateDir = join(wd, '.omx', 'state');
+      await mkdir(stateDir, { recursive: true });
+
+      const result = runNotifyHook({
+        cwd: wd,
+        type: 'agent-turn-complete',
+        thread_id: 'th-progress',
+        turn_id: 'tu-progress',
+        input_messages: [],
+        last_assistant_message: 'ok',
+      });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+
+      const hudState = JSON.parse(await readFile(join(stateDir, 'hud-state.json'), 'utf-8')) as Record<string, unknown>;
+      assert.ok(typeof hudState.last_turn_at === 'string' && hudState.last_turn_at.length > 0);
+      assert.ok(typeof hudState.last_progress_at === 'string' && hudState.last_progress_at.length > 0);
+      assert.equal(hudState.last_progress_at, hudState.last_turn_at);
+    } finally {
+      await rm(wd, { recursive: true, force: true });
+    }
+  });
+
   it('persists visual-verdict feedback from runtime assistant output', async () => {
     const wd = await mkdtemp(join(tmpdir(), 'omx-notify-visual-'));
     try {
       const sessionId = 'sessVisual';
-      const payload = {
+      const result = runNotifyHook({
         cwd: wd,
         session_id: sessionId,
         type: 'agent-turn-complete',
@@ -192,19 +187,6 @@ describe('notify-hook session-scoped iteration updates', () => {
           }, null, 2),
           '```',
         ].join('\n'),
-      };
-
-      const testDir = dirname(fileURLToPath(import.meta.url));
-      const repoRoot = join(testDir, '..', '..', '..');
-      const result = spawnSync(process.execPath, ['dist/scripts/notify-hook.js', JSON.stringify(payload)], {
-        cwd: repoRoot,
-        encoding: 'utf-8',
-        env: {
-          ...process.env,
-          OMX_TEAM_WORKER: '',
-          TMUX: '',
-          TMUX_PANE: '',
-        },
       });
       assert.equal(result.status, 0, result.stderr || result.stdout);
 

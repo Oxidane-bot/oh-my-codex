@@ -202,7 +202,6 @@ export async function handleTmuxInjection({
   const activeModes: string[] = [];
   const activeModeStates: Record<string, any> = {};
   const scannedStateDirs = new Set<string>();
-  const payloadSessionId = safeString(payload.session_id || payload['session-id'] || '');
   const scanActiveModeStateDirs = async (dirs: string[], preserveExisting = false) => {
     for (const scopedDir of dirs) {
       const resolvedScopedDir = resolvePath(scopedDir);
@@ -225,7 +224,7 @@ export async function handleTmuxInjection({
     }
   };
   try {
-    const scopedDirs = await getScopedStateDirsForCurrentSession(stateDir, payloadSessionId);
+    const scopedDirs = await getScopedStateDirsForCurrentSession(stateDir);
     await scanActiveModeStateDirs(scopedDirs);
 
     if (!pickActiveMode(activeModes, config.allowed_modes) && !scannedStateDirs.has(resolvePath(stateDir))) {
