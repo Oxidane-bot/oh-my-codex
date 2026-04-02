@@ -27,6 +27,25 @@ describe('modes/base session-scoped persistence', () => {
     }
   });
 
+  it('persists owner_omx_session_id for Ralph when session scope is active', async () => {
+    const wd = await mkdtemp(join(tmpdir(), 'omx-mode-session-ralph-owner-'));
+    try {
+      const stateDir = join(wd, '.omx', 'state');
+      const sessionId = 'sess-ralph-owner';
+      const sessionDir = join(stateDir, 'sessions', sessionId);
+      await mkdir(sessionDir, { recursive: true });
+      await writeFile(join(stateDir, 'session.json'), JSON.stringify({ session_id: sessionId }));
+
+      await startMode('ralph', 'own this session', 5, wd);
+
+      const scoped = JSON.parse(await readFile(join(sessionDir, 'ralph-state.json'), 'utf-8')) as Record<string, unknown>;
+      assert.equal(scoped.owner_omx_session_id, sessionId);
+      assert.equal(scoped.active, true);
+    } finally {
+      await rm(wd, { recursive: true, force: true });
+    }
+  });
+
   it('prefers session-scoped reads over root fallback and writes updates back to the session scope', async () => {
     const wd = await mkdtemp(join(tmpdir(), 'omx-mode-session-read-'));
     try {

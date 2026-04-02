@@ -346,6 +346,13 @@ export async function handleStateToolCall(request: {
 						...fields,
 						...((customState as Record<string, unknown>) || {}),
 					} as Record<string, unknown>;
+					if (
+						mode === "ralph" &&
+						effectiveSessionId &&
+						typeof mergedRaw.owner_omx_session_id !== "string"
+					) {
+						mergedRaw.owner_omx_session_id = effectiveSessionId;
+					}
 
 					if (mode === "ralph") {
 						const originalPhase = mergedRaw.current_phase;

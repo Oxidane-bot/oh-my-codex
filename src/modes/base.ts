@@ -127,6 +127,7 @@ export async function startMode(
     current_phase: 'starting',
     task_description: taskDescription,
     started_at: new Date().toISOString(),
+    ...(mode === 'ralph' && scope.sessionId ? { owner_omx_session_id: scope.sessionId } : {}),
   };
 
   const withContext = withModeRuntimeContext({}, stateBase) as ModeState;
@@ -167,6 +168,9 @@ export async function updateModeState(
   await mkdir(scope.stateDir, { recursive: true });
 
   const updatedBase = { ...current, ...updates };
+  if (mode === 'ralph' && scope.sessionId && typeof updatedBase.owner_omx_session_id !== 'string') {
+    updatedBase.owner_omx_session_id = scope.sessionId;
+  }
   const normalizedBase = mode === 'ralph'
     ? normalizeRalphModeStateOrThrow(updatedBase as ModeState)
     : updatedBase;

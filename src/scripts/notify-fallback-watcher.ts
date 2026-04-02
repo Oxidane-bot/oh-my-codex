@@ -622,6 +622,7 @@ async function runRalphContinueSteerTick(): Promise<void> {
   const nowIso = new Date(now).toISOString();
   const startupIso = new Date(startedAt).toISOString();
   const activeRalph = await resolveActiveRalphState();
+  const activePaneId = safeString(activeRalph.state?.tmux_pane_id).trim();
   lastRalphContinueSteer = {
     ...lastRalphContinueSteer,
     active: activeRalph.active,
@@ -630,6 +631,7 @@ async function runRalphContinueSteerTick(): Promise<void> {
     last_reason: activeRalph.reason,
     last_error: null,
     state_path: activeRalph.path,
+    pane_id: activePaneId,
     pane_current_command: '',
     shared_timestamp_path: ralphSteerTimestampPath,
     singleton_lock_path: ralphSteerLockPath,

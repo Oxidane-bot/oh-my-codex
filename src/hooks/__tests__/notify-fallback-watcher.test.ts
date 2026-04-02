@@ -1180,6 +1180,7 @@ describe('notify-fallback watcher', () => {
       }, null, 2));
       await writeFile(statePath, JSON.stringify({
         ralph_continue_steer: {
+          pane_id: '%7',
           last_sent_at: new Date(Date.now() - 61_000).toISOString(),
         },
       }, null, 2));
@@ -1199,6 +1200,7 @@ describe('notify-fallback watcher', () => {
       assert.equal(missingRun.status, 0, missingRun.stderr || missingRun.stdout);
       let watcherState = JSON.parse(await readFile(statePath, 'utf-8'));
       assert.equal(watcherState.ralph_continue_steer?.last_reason, 'progress_missing');
+      assert.equal(watcherState.ralph_continue_steer?.pane_id, '%42');
 
       await writeFile(join(stateDir, 'hud-state.json'), JSON.stringify({
         last_progress_at: 'not-a-date',
@@ -1211,6 +1213,7 @@ describe('notify-fallback watcher', () => {
       assert.equal(invalidRun.status, 0, invalidRun.stderr || invalidRun.stdout);
       watcherState = JSON.parse(await readFile(statePath, 'utf-8'));
       assert.equal(watcherState.ralph_continue_steer?.last_reason, 'progress_invalid');
+      assert.equal(watcherState.ralph_continue_steer?.pane_id, '%42');
 
       const tmuxLog = await readFile(tmuxLogPath, 'utf8').catch(() => '');
       const sends = tmuxLog.match(/send-keys -t %42 -l Ralph loop active continue \[OMX_TMUX_INJECT\]/g) || [];

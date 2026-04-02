@@ -57,6 +57,7 @@ export async function resetSessionMetrics(cwd: string): Promise<void> {
 
   await writeFile(join(stateDir, 'hud-state.json'), JSON.stringify({
     last_turn_at: now,
+    last_progress_at: now,
     turn_count: 0,
     last_agent_output: '',
   }, null, 2));

@@ -190,6 +190,25 @@ describe('readRalphState scope precedence', () => {
       assert.equal(state, null);
     });
   });
+
+  it('does not treat another session-scoped Ralph state as active for the current session', async () => {
+    await withTempRepo('omx-hud-ralph-other-session-', async (cwd) => {
+      const rootStateDir = join(cwd, '.omx', 'state');
+      const currentSessionId = 'sess-current';
+      const otherSessionId = 'sess-other';
+      await mkdir(join(rootStateDir, 'sessions', currentSessionId), { recursive: true });
+      await mkdir(join(rootStateDir, 'sessions', otherSessionId), { recursive: true });
+      await writeFile(join(rootStateDir, 'session.json'), JSON.stringify({ session_id: currentSessionId }));
+      await writeFile(join(rootStateDir, 'sessions', otherSessionId, 'ralph-state.json'), JSON.stringify({
+        active: true,
+        iteration: 7,
+        max_iterations: 10,
+      }));
+
+      const state = await readRalphState(cwd);
+      assert.equal(state, null);
+    });
+  });
 });
 
 describe('additional HUD mode state readers', () => {
