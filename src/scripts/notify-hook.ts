@@ -168,7 +168,6 @@ async function main() {
       const resumeResult = await reconcileRalphSessionResume({
         stateDir,
         payloadSessionId,
-        payloadThreadId: safeString(payload['thread-id'] || payload.thread_id || ''),
       });
       currentOmxSessionId = resumeResult.currentOmxSessionId;
       if (resumeResult.resumed || resumeResult.updatedCurrentOwner) {
