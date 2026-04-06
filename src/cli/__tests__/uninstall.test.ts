@@ -48,6 +48,7 @@ function buildOmxConfig(): string {
     '[features]',
     'multi_agent = true',
     'child_agents_md = true',
+    'codex_hooks = true',
     '',
     '# ============================================================',
     '# oh-my-codex (OMX) Configuration',
@@ -111,6 +112,7 @@ function buildConfigWithSeededModelContext(): string {
     '[features]',
     'multi_agent = true',
     'child_agents_md = true',
+    'codex_hooks = true',
     '',
     '# ============================================================',
     '# oh-my-codex (OMX) Configuration',
@@ -141,6 +143,7 @@ function buildMixedConfig(): string {
     '[features]',
     'multi_agent = true',
     'child_agents_md = true',
+    'codex_hooks = true',
     'web_search = true',
     '',
     '[mcp_servers.user_custom]',
@@ -235,6 +238,7 @@ describe('omx uninstall', () => {
       assert.doesNotMatch(config, /developer_instructions\s*=/);
       assert.doesNotMatch(config, /multi_agent\s*=/);
       assert.doesNotMatch(config, /child_agents_md\s*=/);
+      assert.doesNotMatch(config, /codex_hooks\s*=/);
     } finally {
       await rm(wd, { recursive: true, force: true });
     }
@@ -264,6 +268,7 @@ describe('omx uninstall', () => {
       assert.doesNotMatch(config, /notify\s*=.*node/);
       assert.doesNotMatch(config, /multi_agent/);
       assert.doesNotMatch(config, /child_agents_md/);
+      assert.doesNotMatch(config, /codex_hooks/);
     } finally {
       await rm(wd, { recursive: true, force: true });
     }
