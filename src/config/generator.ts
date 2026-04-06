@@ -794,7 +794,7 @@ function getOmxTablesBlock(pkgRoot: string, includeTui = true): string {
  *
  * Layout:
  *   1. OMX top-level keys (notify, model_reasoning_effort, developer_instructions)
- *   2. [features] with multi_agent + child_agents_md
+ *   2. [features] with multi_agent + child_agents_md + codex_hooks
  *   3. [env] with defaulted explore-routing opt-in
  *   4. … user sections …
  *   5. OMX [table] sections (mcp_servers, tui)
