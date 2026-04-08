@@ -30,6 +30,7 @@ import { agentsInitCommand } from "./agents-init.js";
 import { agentsCommand } from "./agents.js";
 import { sessionCommand } from "./session-search.js";
 import { autoresearchCommand } from "./autoresearch.js";
+import { mcpParityCommand } from "./mcp-parity.js";
 import {
   MADMAX_FLAG,
   CODEX_BYPASS_FLAG,
@@ -149,6 +150,12 @@ Usage:
   omx hooks     Manage hook plugins (init|status|validate|test)
   omx hud       Show HUD statusline (--watch, --json, --preset=NAME)
   omx state     Read/write/list OMX mode state via CLI parity surface
+  omx notepad   CLI parity for OMX notepad MCP tools
+  omx project-memory
+                CLI parity for OMX project-memory MCP tools
+  omx trace     CLI parity for OMX trace MCP tools
+  omx code-intel
+                CLI parity for OMX code-intel MCP tools
   omx sparkshell <command> [args...]
   omx sparkshell --tmux-pane <pane-id> [--tail-lines <100-1000>]
                 Run native sparkshell sidecar for direct command execution or explicit tmux-pane summarization
@@ -743,6 +750,18 @@ export async function main(args: string[]): Promise<void> {
         break;
       case "state":
         await stateCommand(args.slice(1));
+        break;
+      case "notepad":
+        await mcpParityCommand("notepad", args.slice(1));
+        break;
+      case "project-memory":
+        await mcpParityCommand("project-memory", args.slice(1));
+        break;
+      case "trace":
+        await mcpParityCommand("trace", args.slice(1));
+        break;
+      case "code-intel":
+        await mcpParityCommand("code-intel", args.slice(1));
         break;
       case "tmux-hook":
         await tmuxHookCommand(args.slice(1));

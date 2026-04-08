@@ -50,8 +50,7 @@ export function buildManagedCodexHooksConfig(pkgRoot: string): ManagedCodexHooks
       ],
       PostToolUse: [
         buildCommandHook(command, {
-          matcher: "Bash",
-          statusMessage: "Running OMX Bash review",
+          statusMessage: "Running OMX tool review",
         }),
       ],
       UserPromptSubmit: [

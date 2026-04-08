@@ -320,8 +320,8 @@ const server = new Server(
   { capabilities: { tools: {} } }
 );
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [
+export function buildCodeIntelServerTools() {
+  return [
     {
       name: 'lsp_diagnostics',
       description: 'Get diagnostics (errors, warnings) for a file. Uses tsc --noEmit for TypeScript projects.',
@@ -440,10 +440,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['pattern', 'replacement', 'language'],
       },
     },
-  ],
+  ];
+}
+
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: buildCodeIntelServerTools(),
 }));
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+export async function handleCodeIntelToolCall(request: {
+  params: { name: string; arguments?: Record<string, unknown> };
+}) {
   const { name, arguments: args } = request.params;
   const a = (args || {}) as Record<string, unknown>;
 
@@ -666,6 +672,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     default:
       return { content: [{ type: 'text' as const, text: `Unknown tool: ${name}` }], isError: true };
   }
-});
+}
+
+server.setRequestHandler(CallToolRequestSchema, handleCodeIntelToolCall);
 
 autoStartStdioMcpServer('code_intel', server);

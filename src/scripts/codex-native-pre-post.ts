@@ -21,6 +21,11 @@ export interface NormalizedPostToolUsePayload {
   stderrText: string;
 }
 
+export interface McpTransportFailureSignal {
+  toolName: string;
+  summary: string;
+}
+
 function safeString(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
@@ -101,6 +106,88 @@ function matchesDestructiveFixture(command: string): boolean {
   return /^\s*rm\s+-rf\s+dist(?:\s|$)/.test(command);
 }
 
+function isMcpLikeToolName(toolName: string): boolean {
+  return /^(mcp__|omx_(?:state|memory|trace|code_intel)\b|state_|project_memory_|notepad_|trace_)/i.test(toolName);
+}
+
+const MCP_TRANSPORT_FAILURE_PATTERNS = [
+  /transport (?:closed|error|failed)/i,
+  /server disconnected/i,
+  /connection (?:closed|reset|lost)/i,
+  /\beconnreset\b/i,
+  /\bepipe\b/i,
+  /broken pipe/i,
+  /stream ended unexpectedly/i,
+  /stdio .*closed/i,
+  /pipe closed/i,
+  /mcp(?: server)? .*closed/i,
+];
+
+type OmxParityCommand =
+  | "state"
+  | "notepad"
+  | "project-memory"
+  | "trace"
+  | "code-intel";
+
+export function detectMcpTransportFailure(
+  payload: CodexHookPayload,
+): McpTransportFailureSignal | null {
+  const normalized = normalizePostToolUsePayload(payload);
+  const combined = [
+    normalized.stderrText,
+    normalized.stdoutText,
+    safeString(normalized.parsedToolResponse?.error),
+    safeString(normalized.parsedToolResponse?.message),
+    safeString(normalized.parsedToolResponse?.details),
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+
+  const mcpContextDetected = isMcpLikeToolName(normalized.toolName)
+    || /\bmcp\b/i.test(combined)
+    || /\bomx-(?:state|memory|trace|code-intel)-server\b/i.test(combined);
+  if (!mcpContextDetected) return null;
+  if (!combined) return null;
+  if (!MCP_TRANSPORT_FAILURE_PATTERNS.some((pattern) => pattern.test(combined))) {
+    return null;
+  }
+
+  return {
+    toolName: normalized.toolName,
+    summary: combined,
+  };
+}
+
+function resolveOmxParityTarget(toolName: string): { command: OmxParityCommand; tool: string } | null {
+  const match = toolName.match(/^mcp__omx_(state|memory|trace|code_intel)__([a-z0-9_]+)$/i);
+  if (!match) return null;
+
+  const [, server, tool] = match;
+  if (server === "state") return { command: "state", tool };
+  if (server === "trace") return { command: "trace", tool };
+  if (server === "code_intel") return { command: "code-intel", tool };
+  if (server === "memory" && tool.startsWith("notepad_")) {
+    return { command: "notepad", tool };
+  }
+  if (server === "memory" && tool.startsWith("project_memory_")) {
+    return { command: "project-memory", tool };
+  }
+  return null;
+}
+
+function shellSingleQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+}
+
+function buildOmxParityFallbackCommand(payload: CodexHookPayload, toolName: string): string | null {
+  const target = resolveOmxParityTarget(toolName);
+  if (!target) return null;
+  const input = safeObject(payload.tool_input) ?? {};
+  return `omx ${target.command} ${target.tool} --input ${shellSingleQuote(JSON.stringify(input))} --json`;
+}
+
 export function buildNativePreToolUseOutput(
   payload: CodexHookPayload,
 ): Record<string, unknown> | null {
@@ -124,6 +211,23 @@ function containsHardFailure(text: string): boolean {
 export function buildNativePostToolUseOutput(
   payload: CodexHookPayload,
 ): Record<string, unknown> | null {
+  const mcpTransportFailure = detectMcpTransportFailure(payload);
+  if (mcpTransportFailure) {
+    const fallbackCommand = buildOmxParityFallbackCommand(payload, mcpTransportFailure.toolName);
+    const fallbackText = fallbackCommand
+      ? `Retry via CLI parity with \`${fallbackCommand}\`.`
+      : "Retry via the matching OMX CLI parity surface instead of retrying the MCP transport blindly.";
+    return {
+      decision: "block",
+      reason: "The MCP tool appears to have lost its transport/server connection. Preserve state, debug the transport failure, and use OMX CLI/file-backed fallbacks instead of retrying blindly.",
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        additionalContext:
+          `Clear MCP transport-death signal detected. Preserve current team/runtime state. ${fallbackText} OMX MCP servers are plain Node stdio processes, so they still shut down when stdin/transport closes. If this happened during team runtime, inspect first with \`omx team status <team>\` or \`omx team api read-stall-state --input '{"team_name":"<team>"}' --json\`, and only force cleanup after capturing needed state. For root-cause debugging, rerun with \`OMX_MCP_TRANSPORT_DEBUG=1\` to log why the stdio transport closed.`,
+      },
+    };
+  }
+
   const normalized = normalizePostToolUsePayload(payload);
   if (!normalized.isBash) return null;
 

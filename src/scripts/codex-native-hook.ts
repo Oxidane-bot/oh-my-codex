@@ -2,11 +2,18 @@ import { execFileSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import { mkdir, readFile, readdir, writeFile } from "fs/promises";
 import { join, resolve } from "path";
-import { readModeState } from "../modes/base.js";
+import { readModeState, updateModeState } from "../modes/base.js";
 import { getReadScopedStateDirs } from "../mcp/state-paths.js";
 import { readSubagentSessionSummary } from "../subagents/tracker.js";
 import { resolveCanonicalTeamStateRoot } from "../team/state-root.js";
-import { readTeamManifestV2, readTeamPhase } from "../team/state.js";
+import {
+  appendTeamEvent,
+  readTeamLeaderAttention,
+  readTeamManifestV2,
+  readTeamPhase,
+  writeTeamLeaderAttention,
+  writeTeamPhase,
+} from "../team/state.js";
 import { omxNotepadPath, omxProjectMemoryPath } from "../utils/paths.js";
 import {
   detectPrimaryKeyword,
@@ -23,6 +30,7 @@ import {
 import {
   buildNativePostToolUseOutput,
   buildNativePreToolUseOutput,
+  detectMcpTransportFailure,
 } from "./codex-native-pre-post.js";
 import {
   buildNativeHookEvent,
@@ -791,6 +799,110 @@ async function buildSkillStopOutput(
   };
 }
 
+async function findActiveTeamForTransportFailure(
+  cwd: string,
+  sessionId: string,
+): Promise<{ teamName: string; phase: string } | null> {
+  const teamState = await readModeState("team", cwd);
+  if (teamState?.active === true) {
+    const teamName = safeString(teamState.team_name).trim();
+    const coarsePhase = formatPhase(teamState.current_phase);
+    if (teamName) {
+      const canonicalPhase = (await readTeamPhase(teamName, cwd))?.current_phase ?? coarsePhase;
+      if (isNonTerminalPhase(canonicalPhase)) {
+        return { teamName, phase: formatPhase(canonicalPhase) };
+      }
+    }
+  }
+
+  return await findCanonicalActiveTeamForSession(cwd, sessionId);
+}
+
+async function markTeamTransportFailure(
+  cwd: string,
+  payload: CodexHookPayload,
+): Promise<void> {
+  const sessionId = readPayloadSessionId(payload);
+  const activeTeam = await findActiveTeamForTransportFailure(cwd, sessionId);
+  if (!activeTeam) return;
+
+  const nowIso = new Date().toISOString();
+  const existingPhase = await readTeamPhase(activeTeam.teamName, cwd);
+  const currentPhase = existingPhase?.current_phase ?? activeTeam.phase;
+  if (!isNonTerminalPhase(currentPhase)) return;
+
+  await writeTeamPhase(
+    activeTeam.teamName,
+    {
+      current_phase: "failed",
+      max_fix_attempts: existingPhase?.max_fix_attempts ?? 3,
+      current_fix_attempt: existingPhase?.current_fix_attempt ?? 0,
+      transitions: [
+        ...(existingPhase?.transitions ?? []),
+        {
+          from: formatPhase(currentPhase),
+          to: "failed",
+          at: nowIso,
+          reason: "mcp_transport_dead",
+        },
+      ],
+      updated_at: nowIso,
+    },
+    cwd,
+  );
+
+  const existingAttention = await readTeamLeaderAttention(activeTeam.teamName, cwd);
+  await writeTeamLeaderAttention(
+    activeTeam.teamName,
+    {
+      team_name: activeTeam.teamName,
+      updated_at: nowIso,
+      source: "notify_hook",
+      leader_decision_state: existingAttention?.leader_decision_state ?? "still_actionable",
+      leader_attention_pending: true,
+      leader_attention_reason: "mcp_transport_dead",
+      attention_reasons: [
+        ...new Set([...(existingAttention?.attention_reasons ?? []), "mcp_transport_dead"]),
+      ],
+      leader_stale: existingAttention?.leader_stale ?? false,
+      leader_session_active: existingAttention?.leader_session_active ?? true,
+      leader_session_id: existingAttention?.leader_session_id ?? (sessionId || null),
+      leader_session_stopped_at: existingAttention?.leader_session_stopped_at ?? null,
+      unread_leader_message_count: existingAttention?.unread_leader_message_count ?? 0,
+      work_remaining: existingAttention?.work_remaining ?? true,
+      stalled_for_ms: existingAttention?.stalled_for_ms ?? null,
+    },
+    cwd,
+  );
+
+  await appendTeamEvent(
+    activeTeam.teamName,
+    {
+      type: "leader_attention",
+      worker: "leader-fixed",
+      reason: "mcp_transport_dead",
+      metadata: {
+        phase_before: formatPhase(currentPhase),
+      },
+    },
+    cwd,
+  ).catch(() => {});
+
+  try {
+    await updateModeState(
+      "team",
+      {
+        current_phase: "failed",
+        error: "mcp_transport_dead",
+        last_turn_at: nowIso,
+      },
+      cwd,
+    );
+  } catch {
+    // Canonical team state already carries the preserved failure for coarse-state-missing sessions.
+  }
+}
+
 async function buildStopHookOutput(
   payload: CodexHookPayload,
   cwd: string,
@@ -954,6 +1066,9 @@ export async function dispatchCodexNativeHook(
   } else if (hookEventName === "PreToolUse") {
     outputJson = buildNativePreToolUseOutput(payload);
   } else if (hookEventName === "PostToolUse") {
+    if (detectMcpTransportFailure(payload)) {
+      await markTeamTransportFailure(cwd, payload);
+    }
     outputJson = buildNativePostToolUseOutput(payload);
   } else if (hookEventName === "Stop") {
     outputJson = await buildStopHookOutput(payload, cwd, stateDir);

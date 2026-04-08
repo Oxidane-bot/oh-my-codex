@@ -10,6 +10,7 @@ const SERVER_DISABLE_ENV: Record<McpServerName, string> = {
 };
 
 const GLOBAL_DISABLE_ENV = 'OMX_MCP_SERVER_DISABLE_AUTO_START';
+const LIFECYCLE_DEBUG_ENV = 'OMX_MCP_TRANSPORT_DEBUG';
 
 interface StdioLifecycleServer {
   connect(transport: StdioServerTransport): Promise<unknown>;
@@ -36,12 +37,20 @@ export function autoStartStdioMcpServer(
 
   const transport = new StdioServerTransport();
   let shuttingDown = false;
+  const lifecycleDebugEnabled = env[LIFECYCLE_DEBUG_ENV] === '1';
 
-  const shutdown = async () => {
+  const logLifecycle = (message: string, error?: unknown) => {
+    if (!lifecycleDebugEnabled) return;
+    const detail = error ? ` ${error instanceof Error ? error.message : String(error)}` : '';
+    process.stderr.write(`[omx-${serverName}-server] ${message}${detail}\n`);
+  };
+
+  const shutdown = async (reason: string) => {
     if (shuttingDown) {
       return;
     }
     shuttingDown = true;
+    logLifecycle(`transport shutdown: ${reason}`);
     process.stdin.off('end', handleStdinEnd);
     process.stdin.off('close', handleStdinClose);
     process.off('SIGTERM', handleSigterm);
@@ -55,16 +64,16 @@ export function autoStartStdioMcpServer(
   };
 
   const handleStdinEnd = () => {
-    void shutdown();
+    void shutdown('stdin_end');
   };
   const handleStdinClose = () => {
-    void shutdown();
+    void shutdown('stdin_close');
   };
   const handleSigterm = () => {
-    void shutdown();
+    void shutdown('sigterm');
   };
   const handleSigint = () => {
-    void shutdown();
+    void shutdown('sigint');
   };
 
   process.stdin.once('end', handleStdinEnd);
@@ -74,10 +83,11 @@ export function autoStartStdioMcpServer(
 
   // Funnel transport/client disconnects through the same idempotent shutdown path.
   transport.onclose = () => {
-    void shutdown();
+    void shutdown('transport_close');
   };
 
   server.connect(transport).catch((error) => {
+    logLifecycle('server.connect failed', error);
     process.stdin.off('end', handleStdinEnd);
     process.stdin.off('close', handleStdinClose);
     process.off('SIGTERM', handleSigterm);

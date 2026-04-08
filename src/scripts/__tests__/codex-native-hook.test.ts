@@ -6,7 +6,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { buildManagedCodexHooksConfig } from "../../config/codex-hooks.js";
-import { initTeamState } from "../../team/state.js";
+import {
+  initTeamState,
+  readTeamLeaderAttention,
+  readTeamPhase,
+} from "../../team/state.js";
 import {
   dispatchCodexNativeHook,
   mapCodexHookEventToOmxEvent,
@@ -41,6 +45,17 @@ describe("codex native hook config", () => {
       String(preToolUse.hooks?.[0]?.command || ""),
       /codex-native-hook\.js"?$/,
     );
+
+    const postToolUse = config.hooks.PostToolUse[0] as {
+      matcher?: string;
+      hooks?: Array<Record<string, unknown>>;
+    };
+    assert.equal(postToolUse.matcher, undefined);
+    assert.match(
+      String(postToolUse.hooks?.[0]?.command || ""),
+      /codex-native-hook\.js"?$/,
+    );
+    assert.equal(postToolUse.hooks?.[0]?.statusMessage, "Running OMX tool review");
 
     const stop = config.hooks.Stop[0] as {
       hooks?: Array<Record<string, unknown>>;
@@ -324,6 +339,123 @@ describe("codex native hook dispatch", () => {
     }
   });
 
+  it("returns PostToolUse MCP transport fallback guidance for clear MCP transport death", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "omx-native-hook-posttool-mcp-transport-"));
+    try {
+      const result = await dispatchCodexNativeHook(
+        {
+          hook_event_name: "PostToolUse",
+          cwd,
+          tool_name: "mcp__omx_state__state_write",
+          tool_use_id: "tool-mcp-transport",
+          tool_input: { mode: "team", active: true },
+          tool_response: "{\"error\":\"MCP transport closed\",\"details\":\"stdio pipe closed before response\"}",
+        },
+        { cwd },
+      );
+
+      assert.equal(result.omxEventName, "post-tool-use");
+      const output = result.outputJson as {
+        decision?: string;
+        reason?: string;
+        hookSpecificOutput?: { additionalContext?: string };
+      } | null;
+      assert.equal(output?.decision, "block");
+      assert.equal(
+        output?.reason,
+        "The MCP tool appears to have lost its transport/server connection. Preserve state, debug the transport failure, and use OMX CLI/file-backed fallbacks instead of retrying blindly.",
+      );
+      const additionalContext = String(
+        output?.hookSpecificOutput?.additionalContext ?? "",
+      );
+      assert.match(
+        additionalContext,
+        /omx state state_write --input/,
+      );
+      assert.match(
+        additionalContext,
+        /plain Node stdio processes/i,
+      );
+      assert.match(
+        additionalContext,
+        /read-stall-state/,
+      );
+      assert.match(
+        additionalContext,
+        /OMX_MCP_TRANSPORT_DEBUG=1/,
+      );
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("does not classify non-transport MCP failures as transport death", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "omx-native-hook-posttool-mcp-nontransport-"));
+    try {
+      const result = await dispatchCodexNativeHook(
+        {
+          hook_event_name: "PostToolUse",
+          cwd,
+          tool_name: "mcp__omx_state__state_write",
+          tool_use_id: "tool-mcp-nontransport",
+          tool_input: { active: true },
+          tool_response: "{\"error\":\"validation failed\",\"details\":\"mode is required\"}",
+        },
+        { cwd },
+      );
+
+      assert.equal(result.omxEventName, "post-tool-use");
+      assert.equal(result.outputJson, null);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("marks active team state failed on MCP transport death without deleting team state", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "omx-native-hook-team-mcp-transport-"));
+    const previousCwd = process.cwd();
+    try {
+      process.chdir(cwd);
+      await initTeamState(
+        "transport-team",
+        "task",
+        "executor",
+        1,
+        cwd,
+        undefined,
+        { ...process.env, OMX_SESSION_ID: "sess-transport" },
+      );
+      await writeJson(join(cwd, ".omx", "state", "team-state.json"), {
+        active: true,
+        team_name: "transport-team",
+        current_phase: "team-exec",
+      });
+
+      await dispatchCodexNativeHook(
+        {
+          hook_event_name: "PostToolUse",
+          cwd,
+          session_id: "sess-transport",
+          tool_name: "mcp__omx_state__state_write",
+          tool_use_id: "tool-mcp-transport-team",
+          tool_input: { mode: "team", active: true },
+          tool_response: "{\"error\":\"MCP transport closed\",\"details\":\"stdio pipe closed before response\"}",
+        },
+        { cwd },
+      );
+
+      const phase = await readTeamPhase("transport-team", cwd);
+      const attention = await readTeamLeaderAttention("transport-team", cwd);
+      assert.equal(phase?.current_phase, "failed");
+      assert.equal(attention?.leader_attention_reason, "mcp_transport_dead");
+      assert.equal(attention?.leader_attention_pending, true);
+      assert.equal(existsSync(join(cwd, ".omx", "state", "team", "transport-team")), true);
+    } finally {
+      process.chdir(previousCwd);
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("treats stderr-only informative non-zero output as reviewable instead of a generic failure", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "omx-native-hook-posttool-informative-stderr-"));
     try {
@@ -384,6 +516,67 @@ describe("codex native hook dispatch", () => {
     }
   });
 
+  it("returns MCP transport-death guidance and preserves failed team state", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "omx-native-hook-posttool-mcp-dead-"));
+    try {
+      await initTeamState(
+        "mcp-transport-dead-team",
+        "transport failure fallback",
+        "executor",
+        1,
+        cwd,
+        undefined,
+        { ...process.env, OMX_SESSION_ID: "sess-mcp-dead" },
+      );
+
+      const result = await dispatchCodexNativeHook(
+        {
+          hook_event_name: "PostToolUse",
+          cwd,
+          session_id: "sess-mcp-dead",
+          tool_name: "mcp__omx_state__state_write",
+          tool_use_id: "tool-mcp-dead",
+          tool_response: JSON.stringify({
+            error: "transport closed",
+            message: "MCP server disconnected",
+          }),
+        },
+        { cwd },
+      );
+
+      assert.equal(result.omxEventName, "post-tool-use");
+      assert.equal(result.outputJson?.decision, "block");
+      assert.match(String(result.outputJson?.reason || ""), /lost its transport\/server connection/);
+      const hookSpecificOutput = result.outputJson?.hookSpecificOutput as {
+        hookEventName?: string;
+        additionalContext?: string;
+      } | undefined;
+      assert.equal(hookSpecificOutput?.hookEventName, "PostToolUse");
+      assert.match(
+        String(hookSpecificOutput?.additionalContext || ""),
+        /Retry via CLI parity with `omx state state_write --input '\{\}' --json`\./,
+      );
+      assert.match(
+        String(hookSpecificOutput?.additionalContext || ""),
+        /omx team api read-stall-state/,
+      );
+
+      const phase = JSON.parse(
+        await readFile(join(cwd, ".omx", "state", "team", "mcp-transport-dead-team", "phase.json"), "utf-8"),
+      ) as { current_phase?: string; transitions?: Array<{ reason?: string }> };
+      assert.equal(phase.current_phase, "failed");
+      assert.equal(phase.transitions?.at(-1)?.reason, "mcp_transport_dead");
+
+      const attention = JSON.parse(
+        await readFile(join(cwd, ".omx", "state", "team", "mcp-transport-dead-team", "leader-attention.json"), "utf-8"),
+      ) as { leader_attention_reason?: string; attention_reasons?: string[] };
+      assert.equal(attention.leader_attention_reason, "mcp_transport_dead");
+      assert.ok(attention.attention_reasons?.includes("mcp_transport_dead"));
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("stays silent on neutral successful PostToolUse output", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "omx-native-hook-posttool-neutral-"));
     try {
@@ -401,6 +594,60 @@ describe("codex native hook dispatch", () => {
 
       assert.equal(result.omxEventName, "post-tool-use");
       assert.equal(result.outputJson, null);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("returns CLI fallback guidance and preserves failed team state on clear MCP transport death", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "omx-native-hook-posttool-mcp-transport-"));
+    try {
+      await initTeamState(
+        "transport-team",
+        "transport failure fallback",
+        "executor",
+        1,
+        cwd,
+        undefined,
+        { ...process.env, OMX_SESSION_ID: "sess-stop-mcp-transport" },
+      );
+      await writeJson(join(cwd, ".omx", "state", "team-state.json"), {
+        active: true,
+        team_name: "transport-team",
+        current_phase: "team-exec",
+      });
+
+      const result = await dispatchCodexNativeHook(
+        {
+          hook_event_name: "PostToolUse",
+          cwd,
+          session_id: "sess-stop-mcp-transport",
+          tool_name: "mcp__omx_state__state_write",
+          tool_use_id: "tool-mcp-fail",
+          tool_input: { mode: "team", active: true },
+          tool_response: JSON.stringify({
+            error: "MCP transport closed unexpectedly",
+            exit_code: 1,
+          }),
+        },
+        { cwd },
+      );
+
+      assert.equal(result.omxEventName, "post-tool-use");
+      assert.deepEqual(result.outputJson, {
+        decision: "block",
+        reason: "The MCP tool appears to have lost its transport/server connection. Preserve state, debug the transport failure, and use OMX CLI/file-backed fallbacks instead of retrying blindly.",
+        hookSpecificOutput: {
+          hookEventName: "PostToolUse",
+          additionalContext:
+            "Clear MCP transport-death signal detected. Preserve current team/runtime state. Retry via CLI parity with `omx state state_write --input '{\"mode\":\"team\",\"active\":true}' --json`. OMX MCP servers are plain Node stdio processes, so they still shut down when stdin/transport closes. If this happened during team runtime, inspect first with `omx team status <team>` or `omx team api read-stall-state --input '{\"team_name\":\"<team>\"}' --json`, and only force cleanup after capturing needed state. For root-cause debugging, rerun with `OMX_MCP_TRANSPORT_DEBUG=1` to log why the stdio transport closed.",
+        },
+      });
+
+      const phase = await readTeamPhase("transport-team", cwd);
+      const attention = await readTeamLeaderAttention("transport-team", cwd);
+      assert.equal(phase?.current_phase, "failed");
+      assert.equal(attention?.leader_attention_reason, "mcp_transport_dead");
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

@@ -198,6 +198,7 @@ describe('runtime-cli helpers', () => {
       }]);
       assert.match(result.notice, /preserving team state/i);
       assert.match(result.notice, /omx team shutdown runtime-cli-preserve-complete/);
+      assert.match(result.notice, /omx team api read-stall-state/);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -237,6 +238,7 @@ describe('runtime-cli helpers', () => {
         summary: 'FAIL: worker crashed',
       }]);
       assert.match(result.notice, /preserving team state/i);
+      assert.match(result.notice, /omx team api read-stall-state/);
       assert.match(result.notice, /omx team shutdown runtime-cli-preserve-failed/);
     } finally {
       await rm(cwd, { recursive: true, force: true });
