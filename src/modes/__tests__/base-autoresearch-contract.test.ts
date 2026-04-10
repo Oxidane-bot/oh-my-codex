@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { readModeState, startMode } from '../base.js';
@@ -23,6 +23,26 @@ describe('modes/base deep-interview contract integration', () => {
 });
 
 describe('modes/base autoresearch contract integration', () => {
+  it('startMode auto-completes deep-interview when starting ralplan', async () => {
+    const wd = await mkdtemp(join(tmpdir(), 'omx-mode-interview-ralplan-handoff-'));
+    try {
+      await startMode('deep-interview', 'clarify contract', 3, wd);
+      const started = await startMode('ralplan', 'plan contract', 5, wd);
+      assert.equal(started.mode, 'ralplan');
+      assert.equal(started.active, true);
+      assert.equal(started.transition_message, 'mode transiting: deep-interview -> ralplan');
+
+      const completed = JSON.parse(
+        await readFile(join(wd, '.omx', 'state', 'deep-interview-state.json'), 'utf-8'),
+      ) as { active?: boolean; current_phase?: string; completed_at?: string };
+      assert.equal(completed.active, false);
+      assert.equal(completed.current_phase, 'completed');
+      assert.equal(typeof completed.completed_at, 'string');
+    } finally {
+      await rm(wd, { recursive: true, force: true });
+    }
+  });
+
   it('startMode allows the approved team + ralph overlap', async () => {
     const wd = await mkdtemp(join(tmpdir(), 'omx-mode-team-ralph-overlap-'));
     try {
@@ -48,13 +68,25 @@ describe('modes/base autoresearch contract integration', () => {
     }
   });
 
-  it('startMode blocks unsupported ralph + ultrawork overlap', async () => {
-    const wd = await mkdtemp(join(tmpdir(), 'omx-mode-ralph-ultrawork-deny-'));
+  it('startMode allows ultrawork overlap with any tracked mode', async () => {
+    const wd = await mkdtemp(join(tmpdir(), 'omx-mode-ralph-ultrawork-allow-'));
     try {
       await startMode('ralph', 'demo', 5, wd);
+      const started = await startMode('ultrawork', 'demo mission', 1, wd);
+      assert.equal(started.mode, 'ultrawork');
+      assert.equal(started.active, true);
+    } finally {
+      await rm(wd, { recursive: true, force: true });
+    }
+  });
+
+  it('startMode blocks execution-to-planning rollback auto-complete', async () => {
+    const wd = await mkdtemp(join(tmpdir(), 'omx-mode-rollback-deny-'));
+    try {
+      await startMode('autopilot', 'demo', 5, wd);
       await assert.rejects(
-        () => startMode('ultrawork', 'demo mission', 1, wd),
-        /Unsupported workflow overlap: ralph \+ ultrawork\./i,
+        () => startMode('ralplan', 'plan again', 5, wd),
+        /Execution-to-planning rollback auto-complete is not allowed/i,
       );
     } finally {
       await rm(wd, { recursive: true, force: true });

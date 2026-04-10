@@ -417,7 +417,7 @@ describe('state-server directory initialization', () => {
     }
   });
 
-  it('denies invalid writes before touching the requested mode file when canonical session state is stricter than mode files', async () => {
+  it('allows ultrawork when canonical session state is stricter than mode files', async () => {
     process.env.OMX_STATE_SERVER_DISABLE_AUTO_START = '1';
     const { handleStateToolCall } = await import('../state-server.js');
 
@@ -451,7 +451,7 @@ describe('state-server directory initialization', () => {
         }, null, 2),
       );
 
-      const denied = await handleStateToolCall({
+      const allowed = await handleStateToolCall({
         params: {
           name: 'state_write',
           arguments: {
@@ -464,11 +464,10 @@ describe('state-server directory initialization', () => {
         },
       });
 
-      assert.equal(denied.isError, true);
-      assert.match(denied.content[0]?.text || '', /Unsupported workflow overlap: team \+ ralph \+ ultrawork\./);
+      assert.equal(allowed.isError, undefined);
       assert.equal(
         existsSync(join(wd, '.omx', 'state', 'sessions', 'sess-canonical-deny', 'ultrawork-state.json')),
-        false,
+        true,
       );
     } finally {
       await rm(wd, { recursive: true, force: true });
@@ -692,6 +691,126 @@ describe('state-server directory initialization', () => {
         [{ skill: 'autopilot', phase: 'planning', session_id: 'sess-standalone' }],
       );
       assert.equal(existsSync(join(wd, '.omx', 'state', 'sessions', 'sess-standalone', 'team-state.json')), false);
+    } finally {
+      await rm(wd, { recursive: true, force: true });
+    }
+  });
+
+  it('auto-completes deep-interview when starting ralplan and returns transition messaging', async () => {
+    process.env.OMX_STATE_SERVER_DISABLE_AUTO_START = '1';
+    const { handleStateToolCall } = await import('../state-server.js');
+
+    const wd = await mkdtemp(join(tmpdir(), 'omx-state-server-handoff-interview-'));
+    try {
+      await mkdir(join(wd, '.omx', 'state', 'sessions', 'sess-handoff'), { recursive: true });
+      await writeFile(
+        join(wd, '.omx', 'state', 'sessions', 'sess-handoff', 'deep-interview-state.json'),
+        JSON.stringify({ active: true, mode: 'deep-interview', current_phase: 'intent-first' }, null, 2),
+      );
+
+      const response = await handleStateToolCall({
+        params: {
+          name: 'state_write',
+          arguments: {
+            workingDirectory: wd,
+            session_id: 'sess-handoff',
+            mode: 'ralplan',
+            active: true,
+            current_phase: 'planning',
+          },
+        },
+      });
+
+      assert.equal(response.isError, undefined);
+      const body = JSON.parse(response.content[0]?.text || '{}') as { transition?: string };
+      assert.equal(body.transition, 'mode transiting: deep-interview -> ralplan');
+
+      const completed = JSON.parse(
+        await readFile(join(wd, '.omx', 'state', 'sessions', 'sess-handoff', 'deep-interview-state.json'), 'utf-8'),
+      ) as { active?: boolean; current_phase?: string; completed_at?: string; auto_completed_reason?: string };
+      assert.equal(completed.active, false);
+      assert.equal(completed.current_phase, 'completed');
+      assert.equal(typeof completed.completed_at, 'string');
+      assert.match(completed.auto_completed_reason || '', /mode transiting: deep-interview -> ralplan/);
+    } finally {
+      await rm(wd, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects execution-to-planning rollback with clear-first guidance', async () => {
+    process.env.OMX_STATE_SERVER_DISABLE_AUTO_START = '1';
+    const { handleStateToolCall } = await import('../state-server.js');
+
+    const wd = await mkdtemp(join(tmpdir(), 'omx-state-server-rollback-'));
+    try {
+      await handleStateToolCall({
+        params: {
+          name: 'state_write',
+          arguments: {
+            workingDirectory: wd,
+            session_id: 'sess-rollback',
+            mode: 'autopilot',
+            active: true,
+            current_phase: 'planning',
+          },
+        },
+      });
+
+      const denied = await handleStateToolCall({
+        params: {
+          name: 'state_write',
+          arguments: {
+            workingDirectory: wd,
+            session_id: 'sess-rollback',
+            mode: 'ralplan',
+            active: true,
+            current_phase: 'planning',
+          },
+        },
+      });
+
+      assert.equal(denied.isError, true);
+      const body = JSON.parse(denied.content[0]?.text || '{}') as { error?: string };
+      assert.match(body.error || '', /Execution-to-planning rollback auto-complete is not allowed/i);
+      assert.match(body.error || '', /First clear current state first and retry if this action is intended/i);
+    } finally {
+      await rm(wd, { recursive: true, force: true });
+    }
+  });
+
+  it('allows ultrawork overlap with any tracked mode', async () => {
+    process.env.OMX_STATE_SERVER_DISABLE_AUTO_START = '1';
+    const { handleStateToolCall } = await import('../state-server.js');
+
+    const wd = await mkdtemp(join(tmpdir(), 'omx-state-server-ultrawork-any-'));
+    try {
+      const first = await handleStateToolCall({
+        params: {
+          name: 'state_write',
+          arguments: {
+            workingDirectory: wd,
+            session_id: 'sess-ulw',
+            mode: 'autopilot',
+            active: true,
+            current_phase: 'planning',
+          },
+        },
+      });
+      assert.equal(first.isError, undefined);
+
+      const second = await handleStateToolCall({
+        params: {
+          name: 'state_write',
+          arguments: {
+            workingDirectory: wd,
+            session_id: 'sess-ulw',
+            mode: 'ultrawork',
+            active: true,
+            current_phase: 'planning',
+          },
+        },
+      });
+      assert.equal(second.isError, undefined);
     } finally {
       await rm(wd, { recursive: true, force: true });
     }

@@ -32,17 +32,14 @@ import {
 import { withModeRuntimeContext } from "../state/mode-state-context.js";
 import {
 	SKILL_ACTIVE_STATE_MODE,
-	listActiveSkills,
 	readSkillActiveState,
-	readVisibleSkillActiveState,
 	syncCanonicalSkillStateForMode,
 	writeSkillActiveStateCopies,
 } from "../state/skill-active.js";
 import {
-	assertWorkflowTransitionAllowed,
 	isTrackedWorkflowMode,
-	readActiveWorkflowModes,
 } from "../state/workflow-transition.js";
+import { reconcileWorkflowTransition } from "../state/workflow-transition-reconcile.js";
 import {
 	RALPH_PHASES,
 	validateAndNormalizeRalphState,
@@ -84,18 +81,6 @@ async function listStateSessionIds(cwd: string): Promise<string[]> {
 		.filter((entry) => entry.isDirectory())
 		.map((entry) => entry.name)
 		.filter((entry) => entry.trim().length > 0);
-}
-
-async function readWorkflowModesForValidation(
-	cwd: string,
-	sessionId?: string,
-): Promise<string[]> {
-	const canonical = await readVisibleSkillActiveState(cwd, sessionId);
-	const canonicalModes = listActiveSkills(canonical ?? {})
-		.map((entry) => entry.skill)
-		.filter(isTrackedWorkflowMode);
-	if (canonicalModes.length > 0) return canonicalModes;
-	return readActiveWorkflowModes(cwd, sessionId);
 }
 
 async function withStateWriteLock<T>(
@@ -365,6 +350,7 @@ export async function handleStateToolCall(request: {
 					...fields
 				} = args as Record<string, unknown>;
 				let validationError: string | null = null;
+				let transitionMessage: string | undefined;
 				await withStateWriteLock(path, async () => {
 					let existing: Record<string, unknown> = {};
 					if (existsSync(path)) {
@@ -384,14 +370,22 @@ export async function handleStateToolCall(request: {
 					} as Record<string, unknown>;
 					if (isTrackedWorkflowMode(mode) && mergedRaw.active === true) {
 						try {
-							const activeModes = await readWorkflowModesForValidation(cwd, effectiveSessionId);
-							assertWorkflowTransitionAllowed(activeModes, mode, "write");
 							if (!effectiveSessionId) {
 								for (const sessionId of await listStateSessionIds(cwd)) {
-									const sessionModes = await readWorkflowModesForValidation(cwd, sessionId);
-									assertWorkflowTransitionAllowed(sessionModes, mode, "write");
+									const sessionTransition = await reconcileWorkflowTransition(cwd, mode, {
+										action: "write",
+										sessionId,
+										source: "state-server",
+									});
+									transitionMessage ??= sessionTransition.transitionMessage;
 								}
 							}
+							const transition = await reconcileWorkflowTransition(cwd, mode, {
+								action: "write",
+								sessionId: effectiveSessionId,
+								source: "state-server",
+							});
+							transitionMessage ??= transition.transitionMessage;
 						} catch (error) {
 							validationError = (error as Error).message;
 							return;
@@ -458,7 +452,12 @@ export async function handleStateToolCall(request: {
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify({ success: true, mode, path }),
+							text: JSON.stringify({
+								success: true,
+								mode,
+								path,
+								...(transitionMessage ? { transition: transitionMessage } : {}),
+							}),
 						},
 					],
 				};

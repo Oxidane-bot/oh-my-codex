@@ -28,6 +28,7 @@ import {
   evaluateWorkflowTransition,
   isTrackedWorkflowMode,
 } from '../state/workflow-transition.js';
+import { reconcileWorkflowTransition } from '../state/workflow-transition-reconcile.js';
 
 export interface KeywordMatch {
   keyword: string;
@@ -68,6 +69,9 @@ export interface SkillActiveState {
   initialized_mode?: string;
   initialized_state_path?: string;
   transition_error?: string;
+  transition_message?: string;
+  transition_messages?: string[];
+  requested_skills?: string[];
   [key: string]: unknown;
 }
 
@@ -521,6 +525,7 @@ export async function recordSkillActivation(input: RecordSkillActivationInput): 
     const requestedWorkflowSkills = workflowMatches.length > 0 ? workflowMatches : [match.skill];
 
     let nextWorkflowEntries = previousWorkflowEntries.map((entry) => ({ ...entry }));
+    const transitionMessages: string[] = [];
     for (const requestedMode of requestedWorkflowSkills) {
       const decision = evaluateWorkflowTransition(
         nextWorkflowEntries.map((entry) => entry.skill),
@@ -549,6 +554,27 @@ export async function recordSkillActivation(input: RecordSkillActivationInput): 
           ),
         };
       }
+
+      if (decision.autoCompleteModes.length > 0) {
+        const transition = await reconcileWorkflowTransition(
+          dirname(dirname(input.stateDir)),
+          requestedMode,
+          {
+            action: 'activate',
+            sessionId: input.sessionId,
+            source: 'keyword-detector',
+            currentModes: nextWorkflowEntries.map((entry) => entry.skill),
+          },
+        );
+        if (transition.transitionMessage) {
+          transitionMessages.push(transition.transitionMessage);
+        }
+      }
+
+      const survivingSkills = new Set(decision.resultingModes);
+      nextWorkflowEntries = nextWorkflowEntries.filter((entry) => (
+        isTrackedWorkflowMode(entry.skill) && survivingSkills.has(entry.skill)
+      ));
 
       const existingEntry = nextWorkflowEntries.find((entry) => entry.skill === requestedMode);
       if (existingEntry) {
@@ -581,40 +607,44 @@ export async function recordSkillActivation(input: RecordSkillActivationInput): 
       ];
     }
 
-    const matchedEntry = nextWorkflowEntries.find((entry) => entry.skill === match.skill) ?? nextWorkflowEntries[0];
+    const primaryEntry = nextWorkflowEntries.find((entry) => entry.skill === match.skill) ?? nextWorkflowEntries[0];
+    const primarySkill = primaryEntry?.skill || match.skill;
     const workflowState: SkillActiveState = {
       version: 1,
       active: true,
-      skill: match.skill,
-      keyword: match.keyword,
-      phase: matchedEntry?.phase || 'planning',
-      activated_at: matchedEntry?.activated_at || nowIso,
+      skill: primarySkill,
+      keyword: primarySkill === match.skill ? match.keyword : `$${primarySkill}`,
+      phase: primaryEntry?.phase || 'planning',
+      activated_at: primaryEntry?.activated_at || nowIso,
       updated_at: nowIso,
       source: 'keyword-detector',
       session_id: input.sessionId,
       thread_id: input.threadId,
       turn_id: input.turnId,
       active_skills: nextWorkflowEntries,
+      ...(transitionMessages[0] ? { transition_message: transitionMessages[0] } : {}),
+      ...(transitionMessages.length > 0 ? { transition_messages: [...new Set(transitionMessages)] } : {}),
+      ...(requestedWorkflowSkills.length > 1 ? { requested_skills: requestedWorkflowSkills } : {}),
       ...(deepInterviewInputLock ? { input_lock: deepInterviewInputLock } : {}),
     };
 
     try {
       let nextState: SkillActiveState = { ...workflowState };
-      for (const requestedMode of requestedWorkflowSkills) {
-        const requestedEntry = nextWorkflowEntries.find((entry) => entry.skill === requestedMode);
+      for (const requestedEntry of nextWorkflowEntries) {
         const seeded = await persistStatefulSkillSeedState(
           input.stateDir,
           {
             ...workflowState,
-            skill: requestedMode,
-            phase: requestedEntry?.phase || workflowState.phase,
-            activated_at: requestedEntry?.activated_at || workflowState.activated_at,
-            updated_at: requestedEntry?.updated_at || workflowState.updated_at,
+            skill: requestedEntry.skill,
+            keyword: requestedEntry.skill === workflowState.skill ? workflowState.keyword : `$${requestedEntry.skill}`,
+            phase: requestedEntry.phase || workflowState.phase,
+            activated_at: requestedEntry.activated_at || workflowState.activated_at,
+            updated_at: requestedEntry.updated_at || workflowState.updated_at,
           },
           nowIso,
           previous,
         );
-        if (requestedMode === match.skill) {
+        if (requestedEntry.skill === workflowState.skill) {
           nextState = {
             ...workflowState,
             initialized_mode: seeded.initialized_mode,

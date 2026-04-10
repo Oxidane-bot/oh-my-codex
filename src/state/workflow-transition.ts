@@ -15,10 +15,31 @@ export const TRACKED_WORKFLOW_MODES = [
 
 export type TrackedWorkflowMode = (typeof TRACKED_WORKFLOW_MODES)[number];
 export type WorkflowTransitionAction = 'activate' | 'start' | 'write';
+export type WorkflowTransitionKind = 'allow' | 'overlap' | 'auto-complete' | 'deny';
 
 const ALLOWED_OVERLAP_PAIRS = new Set([
   'ralph|team',
-  'team|ultrawork',
+]);
+
+const AUTO_COMPLETE_TRANSITIONS = new Set([
+  'deep-interview->ralplan',
+  'ralplan->team',
+  'ralplan->ralph',
+  'ralplan->autopilot',
+]);
+
+const PLANNING_LIKE_MODES = new Set<TrackedWorkflowMode>([
+  'deep-interview',
+  'ralplan',
+  'autoresearch',
+]);
+
+const EXECUTION_LIKE_MODES = new Set<TrackedWorkflowMode>([
+  'autopilot',
+  'team',
+  'ralph',
+  'ultrawork',
+  'ultraqa',
 ]);
 
 function safeString(value: unknown): string {
@@ -40,7 +61,31 @@ function buildPairKey(a: string, b: string): string {
 }
 
 function isAllowedOverlap(a: TrackedWorkflowMode, b: TrackedWorkflowMode): boolean {
+  if (a === 'ultrawork' || b === 'ultrawork') return true;
   return ALLOWED_OVERLAP_PAIRS.has(buildPairKey(a, b));
+}
+
+function buildAutoCompleteKey(a: TrackedWorkflowMode, b: TrackedWorkflowMode): string {
+  return `${a}->${b}`;
+}
+
+function isAutoCompleteTransition(a: TrackedWorkflowMode, b: TrackedWorkflowMode): boolean {
+  return AUTO_COMPLETE_TRANSITIONS.has(buildAutoCompleteKey(a, b));
+}
+
+function isRollbackTransition(
+  currentModes: readonly TrackedWorkflowMode[],
+  requestedMode: TrackedWorkflowMode,
+): boolean {
+  return PLANNING_LIKE_MODES.has(requestedMode)
+    && currentModes.some((mode) => EXECUTION_LIKE_MODES.has(mode));
+}
+
+export function buildWorkflowTransitionMessage(
+  sourceMode: TrackedWorkflowMode,
+  requestedMode: TrackedWorkflowMode,
+): string {
+  return `mode transiting: ${sourceMode} -> ${requestedMode}`;
 }
 
 function formatActiveModes(modes: readonly string[]): string {
@@ -52,9 +97,13 @@ function formatActiveModes(modes: readonly string[]): string {
 
 export interface WorkflowTransitionDecision {
   allowed: boolean;
+  kind: WorkflowTransitionKind;
   currentModes: TrackedWorkflowMode[];
   requestedMode: TrackedWorkflowMode;
   resultingModes: TrackedWorkflowMode[];
+  autoCompleteModes: TrackedWorkflowMode[];
+  transitionMessage?: string;
+  denialReason?: 'rollback';
 }
 
 export function isTrackedWorkflowMode(mode: string): mode is TrackedWorkflowMode {
@@ -70,35 +119,59 @@ export function evaluateWorkflowTransition(
   if (currentModes.includes(requestedMode)) {
     return {
       allowed: true,
+      kind: 'allow',
       currentModes,
       requestedMode,
       resultingModes: currentModes,
+      autoCompleteModes: [],
     };
   }
 
   if (currentModes.length === 0) {
     return {
       allowed: true,
+      kind: 'allow',
       currentModes,
       requestedMode,
       resultingModes: [requestedMode],
+      autoCompleteModes: [],
     };
   }
 
-  if (currentModes.length === 1 && isAllowedOverlap(currentModes[0], requestedMode)) {
+  const autoCompleteModes = currentModes.filter((mode) => isAutoCompleteTransition(mode, requestedMode));
+  const survivableModes = currentModes.filter((mode) => !autoCompleteModes.includes(mode));
+
+  if (autoCompleteModes.length > 0 && survivableModes.every((mode) => isAllowedOverlap(mode, requestedMode))) {
     return {
       allowed: true,
+      kind: 'auto-complete',
       currentModes,
       requestedMode,
-      resultingModes: [currentModes[0], requestedMode],
+      resultingModes: normalizeTrackedModes([...survivableModes, requestedMode]),
+      autoCompleteModes,
+      transitionMessage: buildWorkflowTransitionMessage(autoCompleteModes[0], requestedMode),
+    };
+  }
+
+  if (currentModes.every((mode) => isAllowedOverlap(mode, requestedMode))) {
+    return {
+      allowed: true,
+      kind: 'overlap',
+      currentModes,
+      requestedMode,
+      resultingModes: normalizeTrackedModes([...currentModes, requestedMode]),
+      autoCompleteModes: [],
     };
   }
 
   return {
     allowed: false,
+    kind: 'deny',
     currentModes,
     requestedMode,
     resultingModes: currentModes,
+    autoCompleteModes: [],
+    ...(isRollbackTransition(currentModes, requestedMode) ? { denialReason: 'rollback' as const } : {}),
   };
 }
 
@@ -107,9 +180,17 @@ export function buildWorkflowTransitionError(
   requestedMode: TrackedWorkflowMode,
   action: WorkflowTransitionAction = 'activate',
 ): string {
-  const currentModes = normalizeTrackedModes(currentActiveModes);
-  const activeModesMessage = formatActiveModes(currentModes);
-  const overlap = [...currentModes, requestedMode].join(' + ');
+  const decision = evaluateWorkflowTransition(currentActiveModes, requestedMode);
+  const activeModesMessage = formatActiveModes(decision.currentModes);
+  const overlap = [...decision.currentModes, requestedMode].join(' + ');
+  if (decision.denialReason === 'rollback') {
+    return [
+      `Cannot ${action} ${requestedMode}: ${activeModesMessage}.`,
+      'Execution-to-planning rollback auto-complete is not allowed.',
+      'First clear current state first and retry if this action is intended.',
+      `Clear incompatible workflow state via \`omx state clear --mode <mode>\` or the \`omx_state.*\` MCP tools, then retry.`,
+    ].join(' ');
+  }
   return [
     `Cannot ${action} ${requestedMode}: ${activeModesMessage}.`,
     `Unsupported workflow overlap: ${overlap}.`,

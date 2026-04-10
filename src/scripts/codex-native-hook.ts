@@ -19,6 +19,7 @@ import {
 } from "../team/state.js";
 import { omxNotepadPath, omxProjectMemoryPath, omxStateDir } from "../utils/paths.js";
 import {
+  detectKeywords,
   detectPrimaryKeyword,
   recordSkillActivation,
   type SkillActiveState,
@@ -426,39 +427,73 @@ async function buildSessionStartContext(
 
 function buildAdditionalContextMessage(prompt: string, skillState?: SkillActiveState | null): string | null {
   if (!prompt) return null;
+  const matches = detectKeywords(prompt);
   const match = detectPrimaryKeyword(prompt);
   if (!match) return null;
+  const requestedSkills = matches.map((entry) => entry.skill);
+  const detectedKeywordMessage = matches.length > 1
+    ? `OMX native UserPromptSubmit detected workflow keywords ${matches.map((entry) => `"${entry.keyword}" -> ${entry.skill}`).join(", ")}.`
+    : `OMX native UserPromptSubmit detected workflow keyword "${match.keyword}" -> ${match.skill}.`;
+  const activeSkills = Array.isArray(skillState?.active_skills)
+    ? skillState.active_skills.map((entry) => entry.skill)
+    : [];
+  const teamDetected = activeSkills.includes("team") || requestedSkills.includes("team");
+  const combinedTransitionMessage = (() => {
+    if (!skillState?.transition_message) return null;
+    if (matches.length <= 1 || activeSkills.length <= 1) return skillState.transition_message;
+    const source = skillState.transition_message.match(/^mode transiting: (.+?) -> /)?.[1];
+    if (!source) return skillState.transition_message;
+    return `mode transiting: ${source} -> ${activeSkills.join(" + ")}`;
+  })();
 
   if (skillState?.transition_error) {
     return [
       `OMX native UserPromptSubmit denied workflow keyword "${match.keyword}" -> ${match.skill}.`,
       skillState.transition_error,
-      'Follow AGENTS.md routing and preserve ralplan/ralph execution gates.',
+      'Follow AGENTS.md routing and preserve workflow transition and planning-safety rules.',
     ].join(' ');
   }
 
-  if (match.skill === "team") {
+  if (skillState?.transition_message) {
+    return [
+      detectedKeywordMessage,
+      combinedTransitionMessage,
+      activeSkills.length > 1 ? `active skills: ${activeSkills.join(", ")}.` : null,
+      skillState.initialized_mode && skillState.initialized_state_path
+        ? `skill: ${skillState.initialized_mode} activated and initial state initialized at ${skillState.initialized_state_path}; write subsequent updates via omx_state MCP.`
+        : null,
+      teamDetected
+        ? "Use the durable OMX team runtime via `omx team ...` for coordinated execution; do not replace it with in-process fanout."
+        : null,
+      teamDetected ? "If you need help, run `omx team --help`." : null,
+      'Follow AGENTS.md routing and preserve workflow transition and planning-safety rules.',
+    ].filter(Boolean).join(' ');
+  }
+
+  if (teamDetected) {
     const initializedStateMessage = skillState?.initialized_mode && skillState.initialized_state_path
       ? `skill: ${skillState.initialized_mode} activated and initial state initialized at ${skillState.initialized_state_path}; write subsequent updates via omx_state MCP.`
       : null;
     return [
-      `OMX native UserPromptSubmit detected workflow keyword "${match.keyword}" -> ${match.skill}.`,
+      detectedKeywordMessage,
+      activeSkills.length > 1 ? `active skills: ${activeSkills.join(", ")}.` : null,
       initializedStateMessage,
       "Use the durable OMX team runtime via `omx team ...` for coordinated execution; do not replace it with in-process fanout.",
       "If you need help, run `omx team --help`.",
-      "Follow AGENTS.md routing and preserve ralplan/ralph execution gates.",
+      "Follow AGENTS.md routing and preserve workflow transition and planning-safety rules.",
     ].filter(Boolean).join(" ");
   }
 
   if (skillState?.initialized_mode && skillState.initialized_state_path) {
     return [
-      `OMX native UserPromptSubmit detected workflow keyword "${match.keyword}" -> ${match.skill}.`,
+      detectedKeywordMessage,
+      activeSkills.length > 1 ? `active skills: ${activeSkills.join(", ")}.` : null,
       `skill: ${skillState.initialized_mode} activated and initial state initialized at ${skillState.initialized_state_path}; write subsequent updates via omx_state MCP.`,
-      "Follow AGENTS.md routing and preserve ralplan/ralph execution gates.",
+      "Follow AGENTS.md routing and preserve workflow transition and planning-safety rules.",
     ].join(" ");
   }
 
-  return `OMX native UserPromptSubmit detected workflow keyword "${match.keyword}" -> ${match.skill}. Follow AGENTS.md routing and preserve ralplan/ralph execution gates.`;
+  return `${detectedKeywordMessage} Follow AGENTS.md routing and preserve workflow transition and planning-safety rules.`;
 }
 
 function parseTeamWorkerEnv(rawValue: string): { teamName: string; workerName: string } | null {

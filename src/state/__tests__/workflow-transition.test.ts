@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildWorkflowTransitionMessage,
   buildWorkflowTransitionError,
   evaluateWorkflowTransition,
 } from '../workflow-transition.js';
@@ -18,13 +19,13 @@ describe('workflow transition rules', () => {
       { current: ['ralph'], requested: 'team', allowed: true, resulting: ['ralph', 'team'] },
       { current: ['team'], requested: 'ultrawork', allowed: true, resulting: ['team', 'ultrawork'] },
       { current: ['ultrawork'], requested: 'team', allowed: true, resulting: ['ultrawork', 'team'] },
-      { current: ['ralph'], requested: 'ultrawork', allowed: false, resulting: ['ralph'] },
-      { current: ['ultrawork'], requested: 'ralph', allowed: false, resulting: ['ultrawork'] },
+      { current: ['ralph'], requested: 'ultrawork', allowed: true, resulting: ['ralph', 'ultrawork'] },
+      { current: ['ultrawork'], requested: 'ralph', allowed: true, resulting: ['ultrawork', 'ralph'] },
       { current: ['autopilot'], requested: 'team', allowed: false, resulting: ['autopilot'] },
       { current: ['team'], requested: 'autopilot', allowed: false, resulting: ['team'] },
       { current: ['autoresearch'], requested: 'ralph', allowed: false, resulting: ['autoresearch'] },
-      { current: ['team', 'ralph'], requested: 'ultrawork', allowed: false, resulting: ['team', 'ralph'] },
-      { current: ['team', 'ultrawork'], requested: 'ralph', allowed: false, resulting: ['team', 'ultrawork'] },
+      { current: ['team', 'ralph'], requested: 'ultrawork', allowed: true, resulting: ['team', 'ralph', 'ultrawork'] },
+      { current: ['team', 'ultrawork'], requested: 'ralph', allowed: true, resulting: ['team', 'ultrawork', 'ralph'] },
     ];
 
     for (const testCase of cases) {
@@ -41,5 +42,33 @@ describe('workflow transition rules', () => {
     assert.match(error, /Current state is unchanged\./);
     assert.match(error, /`omx state clear --mode <mode>`/);
     assert.match(error, /`omx_state\.\*` MCP tools/);
+  });
+
+  it('returns auto-complete decisions for allowlisted forward transitions', () => {
+    const interviewToRalplan = evaluateWorkflowTransition(['deep-interview'], 'ralplan');
+    assert.equal(interviewToRalplan.allowed, true);
+    assert.equal(interviewToRalplan.kind, 'auto-complete');
+    assert.deepEqual(interviewToRalplan.autoCompleteModes, ['deep-interview']);
+    assert.deepEqual(interviewToRalplan.resultingModes, ['ralplan']);
+    assert.equal(interviewToRalplan.transitionMessage, 'mode transiting: deep-interview -> ralplan');
+
+    const ralplanToRalph = evaluateWorkflowTransition(['ralplan', 'ultrawork'], 'ralph');
+    assert.equal(ralplanToRalph.allowed, true);
+    assert.equal(ralplanToRalph.kind, 'auto-complete');
+    assert.deepEqual(ralplanToRalph.autoCompleteModes, ['ralplan']);
+    assert.deepEqual(ralplanToRalph.resultingModes, ['ultrawork', 'ralph']);
+  });
+
+  it('builds rollback denial guidance for execution-to-planning transitions', () => {
+    const error = buildWorkflowTransitionError(['autopilot'], 'ralplan', 'start');
+    assert.match(error, /Execution-to-planning rollback auto-complete is not allowed\./);
+    assert.match(error, /First clear current state first and retry if this action is intended\./);
+  });
+
+  it('formats transition audit messages', () => {
+    assert.equal(
+      buildWorkflowTransitionMessage('ralplan', 'ralph'),
+      'mode transiting: ralplan -> ralph',
+    );
   });
 });

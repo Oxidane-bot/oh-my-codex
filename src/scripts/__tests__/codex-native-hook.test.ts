@@ -354,6 +354,79 @@ describe("codex native hook dispatch", () => {
     }
   });
 
+  it("surfaces transition success output for allowlisted prompt-submit handoffs", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "omx-native-hook-transition-success-"));
+    try {
+      const sessionDir = join(cwd, ".omx", "state", "sessions", "sess-handoff-1");
+      await mkdir(sessionDir, { recursive: true });
+      await writeJson(join(sessionDir, "deep-interview-state.json"), {
+        active: true,
+        mode: "deep-interview",
+        current_phase: "intent-first",
+      });
+      await writeJson(join(sessionDir, "skill-active-state.json"), {
+        active: true,
+        skill: "deep-interview",
+        phase: "planning",
+        session_id: "sess-handoff-1",
+        active_skills: [{ skill: "deep-interview", phase: "planning", active: true, session_id: "sess-handoff-1" }],
+      });
+
+      const result = await dispatchCodexNativeHook(
+        {
+          hook_event_name: "UserPromptSubmit",
+          cwd,
+          session_id: "sess-handoff-1",
+          thread_id: "thread-handoff-1",
+          turn_id: "turn-handoff-1",
+          prompt: "$ralplan implement the approved contract",
+        },
+        { cwd },
+      );
+
+      assert.match(JSON.stringify(result.outputJson), /mode transiting: deep-interview -> ralplan/);
+      const completed = JSON.parse(await readFile(join(sessionDir, "deep-interview-state.json"), "utf-8")) as {
+        active?: boolean;
+        current_phase?: string;
+      };
+      assert.equal(completed.active, false);
+      assert.equal(completed.current_phase, "completed");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("surfaces multi-skill prompt-submit output for ralplan -> team + ralph", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "omx-native-hook-transition-multi-"));
+    try {
+      await mkdir(join(cwd, ".omx", "state"), { recursive: true });
+
+      const result = await dispatchCodexNativeHook(
+        {
+          hook_event_name: "UserPromptSubmit",
+          cwd,
+          session_id: "sess-multi-1",
+          thread_id: "thread-multi-1",
+          turn_id: "turn-multi-1",
+          prompt: "$ralplan $team $ralph ship this fix",
+        },
+        { cwd },
+      );
+
+      const message = String(
+        (result.outputJson as { hookSpecificOutput?: { additionalContext?: string } })?.hookSpecificOutput?.additionalContext || '',
+      );
+      assert.match(message, /\$ralplan" -> ralplan/);
+      assert.match(message, /\$team" -> team/);
+      assert.match(message, /\$ralph" -> ralph/);
+      assert.match(message, /mode transiting: ralplan -> team \+ ralph/);
+      assert.match(message, /active skills: team, ralph\./);
+      assert.match(message, /Use the durable OMX team runtime via `omx team \.\.\.`/);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("runs prompt-submit HUD reconciliation as a best-effort tmux-only side effect", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "omx-native-hook-hud-reconcile-"));
     const originalTmux = process.env.TMUX;

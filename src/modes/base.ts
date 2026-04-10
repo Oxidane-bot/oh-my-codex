@@ -11,6 +11,8 @@ import {
   isTrackedWorkflowMode,
   readActiveWorkflowModes,
 } from '../state/workflow-transition.js';
+import { reconcileWorkflowTransition } from '../state/workflow-transition-reconcile.js';
+import { syncCanonicalSkillStateForMode } from '../state/skill-active.js';
 import { validateAndNormalizeRalphState } from '../ralph/contract.js';
 import {
   getBaseStateDir,
@@ -98,8 +100,16 @@ export async function startMode(
   const dir = stateDir(projectRoot);
   await mkdir(dir, { recursive: true });
 
-  await assertModeStartAllowed(mode, projectRoot);
   const scope = await resolveStateScope(projectRoot);
+  let transitionMessage: string | undefined;
+  if (isTrackedWorkflowMode(mode)) {
+    const transition = await reconcileWorkflowTransition(projectRoot ?? process.cwd(), mode, {
+      action: 'start',
+      sessionId: scope.sessionId,
+      source: 'startMode',
+    });
+    transitionMessage = transition.transitionMessage;
+  }
   await mkdir(scope.stateDir, { recursive: true });
 
   const stateBase: ModeState = {
@@ -110,6 +120,7 @@ export async function startMode(
     current_phase: 'starting',
     task_description: taskDescription,
     started_at: new Date().toISOString(),
+    ...(transitionMessage ? { transition_message: transitionMessage } : {}),
     ...(mode === 'ralph' && scope.sessionId ? { owner_omx_session_id: scope.sessionId } : {}),
   };
 
@@ -118,6 +129,16 @@ export async function startMode(
     ? normalizeRalphModeStateOrThrow(withContext)
     : withContext;
   await writeFile(getStatePath(mode, projectRoot, scope.sessionId), JSON.stringify(state, null, 2));
+  if (isTrackedWorkflowMode(mode)) {
+    await syncCanonicalSkillStateForMode({
+      cwd: projectRoot ?? process.cwd(),
+      mode,
+      active: true,
+      currentPhase: typeof state.current_phase === 'string' ? state.current_phase : undefined,
+      sessionId: scope.sessionId,
+      source: 'startMode',
+    });
+  }
   return state;
 }
 
