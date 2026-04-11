@@ -15,6 +15,6 @@ describe("project wiki config/generator documentation contract", () => {
     const doc = loadSurface("docs/reference/project-wiki.md");
     assert.match(doc, /Wiki state is project-local and should live under/i);
     assert.match(doc, /`\.omx\/wiki\/\*\.md`/);
-    assert.doesNotMatch(doc, /\.omc\/wiki\//);
+    assert.match(doc, /The docs and code should never regress back to `\.omc\/wiki\/`/);
   });
 });

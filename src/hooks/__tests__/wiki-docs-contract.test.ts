@@ -12,7 +12,7 @@ describe("project wiki documentation contract", () => {
     assert.match(doc, /wiki_ingest/);
     assert.match(doc, /wiki_query/);
     assert.match(doc, /Do \*\*not\*\* add vector embeddings/i);
-    assert.doesNotMatch(doc, /\.omc\/wiki\//);
+    assert.match(doc, /These tools should operate only on `\.omx\/wiki\/`/i);
   });
 
   it("locks the approved source-fix regression list into docs", () => {
