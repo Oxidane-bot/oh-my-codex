@@ -47,6 +47,12 @@ export interface EnsureWorktreeResult {
   created: boolean;
   reused: boolean;
   createdBranch: boolean;
+  /** True when the worktree had uncommitted changes at launch time. */
+  dirty?: boolean;
+}
+
+export interface EnsureWorktreeOptions {
+  allowDirtyReuse?: boolean;
 }
 
 interface GitWorktreeEntry {
@@ -358,7 +364,10 @@ export function planWorktreeTarget(input: WorktreePlanInput): PlannedWorktreeTar
   };
 }
 
-export function ensureWorktree(plan: PlannedWorktreeTarget | { enabled: false }): EnsureWorktreeResult | { enabled: false } {
+export function ensureWorktree(
+  plan: PlannedWorktreeTarget | { enabled: false },
+  options: EnsureWorktreeOptions = {},
+): EnsureWorktreeResult | { enabled: false } {
   if (!plan.enabled) return { enabled: false };
 
   const allWorktrees = listWorktrees(plan.repoRoot);
@@ -375,7 +384,8 @@ export function ensureWorktree(plan: PlannedWorktreeTarget | { enabled: false })
       throw new Error(`worktree_target_mismatch:${plan.worktreePath}`);
     }
 
-    if (isWorktreeDirty(plan.worktreePath)) {
+    const dirty = isWorktreeDirty(plan.worktreePath);
+    if (dirty && !options.allowDirtyReuse) {
       throw new Error(`worktree_dirty:${plan.worktreePath}`);
     }
 
@@ -388,6 +398,7 @@ export function ensureWorktree(plan: PlannedWorktreeTarget | { enabled: false })
       created: false,
       reused: true,
       createdBranch: false,
+      ...(dirty ? { dirty: true } : {}),
     } satisfies EnsureWorktreeResult;
 
     if (plan.branchName) {

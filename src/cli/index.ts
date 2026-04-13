@@ -920,15 +920,23 @@ export async function launchWithHud(args: string[]): Promise<void> {
     notifyTempResult.passthroughArgs,
   );
   let cwd = launchCwd;
+  let worktreeDirty = false;
   if (parsedWorktree.mode.enabled) {
     const planned = planWorktreeTarget({
       cwd: launchCwd,
       scope: "launch",
       mode: parsedWorktree.mode,
     });
-    const ensured = ensureWorktree(planned);
+    const ensured = ensureWorktree(planned, { allowDirtyReuse: true });
     if (ensured.enabled) {
       cwd = ensured.worktreePath;
+      if (ensured.dirty) {
+        worktreeDirty = true;
+        process.stderr.write(
+          `[omx] Caution: worktree at ${cwd} has uncommitted changes.\n` +
+          `  The session will launch as-is. Resolve the dirty state with OMX after launch, then proceed with your task.\n`,
+        );
+      }
       const depBootstrap = ensureReusableNodeModules(cwd);
       if (depBootstrap.strategy === "symlink") {
         console.log(`[omx] Reusing node_modules from ${depBootstrap.sourceNodeModulesPath}`);
@@ -971,7 +979,7 @@ export async function launchWithHud(args: string[]): Promise<void> {
 
   // ── Phase 1: preLaunch ──────────────────────────────────────────────────
   try {
-    await preLaunch(cwd, sessionId, notifyTempResult.contract, codexHomeOverride, enableNotifyFallbackAuthority);
+    await preLaunch(cwd, sessionId, notifyTempResult.contract, codexHomeOverride, enableNotifyFallbackAuthority, worktreeDirty);
   } catch (err) {
     // preLaunch errors must NOT prevent Codex from starting
     console.error(
@@ -1011,6 +1019,7 @@ export async function execWithOverlay(args: string[]): Promise<void> {
     notifyTempResult.passthroughArgs,
   );
   let cwd = launchCwd;
+  let worktreeDirty = false;
 
   if (parsedWorktree.mode.enabled) {
     const planned = planWorktreeTarget({
@@ -1018,9 +1027,16 @@ export async function execWithOverlay(args: string[]): Promise<void> {
       scope: "launch",
       mode: parsedWorktree.mode,
     });
-    const ensured = ensureWorktree(planned);
+    const ensured = ensureWorktree(planned, { allowDirtyReuse: true });
     if (ensured.enabled) {
       cwd = ensured.worktreePath;
+      if (ensured.dirty) {
+        worktreeDirty = true;
+        process.stderr.write(
+          `[omx] Caution: worktree at ${cwd} has uncommitted changes.\n` +
+          `  The session will launch as-is. Resolve the dirty state with OMX after launch, then proceed with your task.\n`,
+        );
+      }
       const depBootstrap = ensureReusableNodeModules(cwd);
       if (depBootstrap.strategy === "symlink") {
         console.log(`[omx] Reusing node_modules from ${depBootstrap.sourceNodeModulesPath}`);
@@ -1057,7 +1073,7 @@ export async function execWithOverlay(args: string[]): Promise<void> {
   }
 
   try {
-    await preLaunch(cwd, sessionId, notifyTempResult.contract, codexHomeOverride, true);
+    await preLaunch(cwd, sessionId, notifyTempResult.contract, codexHomeOverride, true, worktreeDirty);
   } catch (err) {
     console.error(
       `[omx] preLaunch warning: ${err instanceof Error ? err.message : err}`,
@@ -2208,6 +2224,7 @@ async function preLaunch(
   notifyTempContract?: NotifyTempContract,
   codexHomeOverride?: string,
   enableNotifyFallbackAuthority: boolean = false,
+  worktreeDirty: boolean = false,
 ): Promise<void> {
   // 1. Best-effort launch-safe orphan cleanup
   try {
@@ -2234,12 +2251,15 @@ async function preLaunch(
   );
   const overlay = await generateOverlay(cwd, sessionId, { orchestrationMode });
   const launchAppendix = await readLaunchAppendInstructions();
+  const dirtyWorktreeGuidance = worktreeDirty
+    ? `\n\n## Session start: dirty worktree detected\n\nThis worktree has uncommitted changes that were present when the session launched.\nBefore executing the requested task, resolve the dirty state first:\n1. Review uncommitted changes with \`git status\` and \`git diff\`.\n2. Commit, stash, or discard changes as appropriate.\n3. Then proceed with the original task.`
+    : "";
   const sessionInstructions =
     launchAppendix.trim().length > 0
       ? `${overlay}
 
-${launchAppendix}`
-      : overlay;
+${launchAppendix}${dirtyWorktreeGuidance}`
+      : `${overlay}${dirtyWorktreeGuidance}`;
   await writeSessionModelInstructionsFile(cwd, sessionId, sessionInstructions);
 
   // 3. Write session state
