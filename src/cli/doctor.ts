@@ -15,6 +15,7 @@ import { parse as parseToml } from '@iarna/toml';
 import { resolvePackagedExploreHarnessCommand, EXPLORE_BIN_ENV } from './explore.js';
 import { getPackageRoot } from '../utils/package.js';
 import { hasLegacyOmxTeamRunTable } from '../config/generator.js';
+import { getMissingManagedCodexHookEvents } from '../config/codex-hooks.js';
 import { getDefaultBridge, isBridgeEnabled } from '../runtime/bridge.js';
 import { OMX_EXPLORE_CMD_ENV, isExploreCommandRoutingEnabled } from '../hooks/explore-routing.js';
 import { isLeaderRuntimeStale } from '../team/leader-activity.js';
@@ -42,6 +43,7 @@ interface DoctorScopeResolution {
 interface DoctorPaths {
   codexHomeDir: string;
   configPath: string;
+  hooksPath: string;
   promptsDir: string;
   skillsDir: string;
   stateDir: string;
@@ -82,6 +84,7 @@ function resolveDoctorPaths(cwd: string, scope: DoctorSetupScope): DoctorPaths {
     return {
       codexHomeDir,
       configPath: join(codexHomeDir, 'config.toml'),
+      hooksPath: join(codexHomeDir, 'hooks.json'),
       promptsDir: join(codexHomeDir, 'prompts'),
       skillsDir: projectSkillsDir(cwd),
       stateDir: omxStateDir(cwd),
@@ -91,6 +94,7 @@ function resolveDoctorPaths(cwd: string, scope: DoctorSetupScope): DoctorPaths {
   return {
     codexHomeDir: codexHome(),
     configPath: codexConfigPath(),
+    hooksPath: join(codexHome(), 'hooks.json'),
     promptsDir: codexPromptsDir(),
     skillsDir: userSkillsDir(),
     stateDir: omxStateDir(cwd),
@@ -130,6 +134,9 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
 
   // Check 4: Config file
   checks.push(await checkConfig(paths.configPath));
+
+  // Check 4.25: Native hooks coverage
+  checks.push(await checkNativeHooks(paths.hooksPath, paths.configPath));
 
   // Check 4.5: Explore routing default
   checks.push(await checkExploreRouting(paths.configPath));
@@ -657,6 +664,66 @@ async function checkExploreRouting(configPath: string): Promise<Check> {
       name: 'Explore routing',
       status: 'fail',
       message: 'cannot read config.toml for explore routing check',
+    };
+  }
+}
+
+async function checkNativeHooks(hooksPath: string, configPath: string): Promise<Check> {
+  if (!existsSync(hooksPath)) {
+    if (existsSync(configPath)) {
+      try {
+        const configContent = await readFile(configPath, 'utf-8');
+        const hasOmx = configContent.includes('omx_') || configContent.includes('oh-my-codex');
+        if (hasOmx) {
+          return {
+            name: 'Native hooks',
+            status: 'warn',
+            message: 'hooks.json not found even though config.toml has OMX entries; run "omx setup --force" to restore native hook coverage',
+          };
+        }
+      } catch {
+        // fall through to the neutral first-setup path when config cannot be read here;
+        // the dedicated config check will report read failures separately.
+      }
+    }
+
+    return {
+      name: 'Native hooks',
+      status: 'pass',
+      message: 'hooks.json not found yet (expected before first setup)',
+    };
+  }
+
+  try {
+    const content = await readFile(hooksPath, 'utf-8');
+    const missingEvents = getMissingManagedCodexHookEvents(content);
+    if (missingEvents === null) {
+      return {
+        name: 'Native hooks',
+        status: 'fail',
+        message: 'invalid hooks.json; Codex may skip OMX hook coverage until "omx setup --force" repairs it',
+      };
+    }
+
+    if (missingEvents.length > 0) {
+      return {
+        name: 'Native hooks',
+        status: 'warn',
+        message:
+          `hooks.json is missing OMX-managed coverage for ${missingEvents.join(', ')}; run "omx setup --force" to restore native hooks`,
+      };
+    }
+
+    return {
+      name: 'Native hooks',
+      status: 'pass',
+      message: 'hooks.json includes OMX-managed coverage for all native hook events',
+    };
+  } catch {
+    return {
+      name: 'Native hooks',
+      status: 'fail',
+      message: 'cannot read hooks.json',
     };
   }
 }

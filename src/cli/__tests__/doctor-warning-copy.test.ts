@@ -250,6 +250,102 @@ USE_OMX_EXPLORE_CMD = "off"
     }
   });
 
+  it('warns when hooks.json is missing OMX-managed native hook coverage', async () => {
+    const wd = await mkdtemp(join(tmpdir(), 'omx-doctor-hooks-coverage-'));
+    try {
+      const home = join(wd, 'home');
+      const codexDir = join(home, '.codex');
+      await mkdir(codexDir, { recursive: true });
+      await writeFile(
+        join(codexDir, 'hooks.json'),
+        JSON.stringify(
+          {
+            hooks: {
+              SessionStart: [
+                {
+                  hooks: [
+                    {
+                      type: 'command',
+                      command: 'node "/repo/dist/scripts/codex-native-hook.js"',
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+          null,
+          2,
+        ) + '\n',
+      );
+
+      const res = runOmx(wd, ['doctor'], {
+        HOME: home,
+        CODEX_HOME: codexDir,
+      });
+      if (shouldSkipForSpawnPermissions(res.error)) return;
+      assert.equal(res.status, 0, res.stderr || res.stdout);
+      assert.match(
+        res.stdout,
+        /Native hooks: hooks\.json is missing OMX-managed coverage for PreToolUse, PostToolUse, UserPromptSubmit, Stop; run "omx setup --force" to restore native hooks/,
+      );
+    } finally {
+      await rm(wd, { recursive: true, force: true });
+    }
+  });
+
+  it('warns when hooks.json is missing after OMX config was already installed', async () => {
+    const wd = await mkdtemp(join(tmpdir(), 'omx-doctor-hooks-missing-'));
+    try {
+      const home = join(wd, 'home');
+      const codexDir = join(home, '.codex');
+      await mkdir(codexDir, { recursive: true });
+      await writeFile(
+        join(codexDir, 'config.toml'),
+        `
+omx_enabled = true
+[mcp_servers.omx_state]
+command = "node"
+`.trimStart(),
+      );
+
+      const res = runOmx(wd, ['doctor'], {
+        HOME: home,
+        CODEX_HOME: codexDir,
+      });
+      if (shouldSkipForSpawnPermissions(res.error)) return;
+      assert.equal(res.status, 0, res.stderr || res.stdout);
+      assert.match(
+        res.stdout,
+        /Native hooks: hooks\.json not found even though config\.toml has OMX entries; run "omx setup --force" to restore native hook coverage/,
+      );
+    } finally {
+      await rm(wd, { recursive: true, force: true });
+    }
+  });
+
+  it('fails when hooks.json is invalid and native hook coverage cannot be read', async () => {
+    const wd = await mkdtemp(join(tmpdir(), 'omx-doctor-hooks-invalid-'));
+    try {
+      const home = join(wd, 'home');
+      const codexDir = join(home, '.codex');
+      await mkdir(codexDir, { recursive: true });
+      await writeFile(join(codexDir, 'hooks.json'), '{invalid json\n');
+
+      const res = runOmx(wd, ['doctor'], {
+        HOME: home,
+        CODEX_HOME: codexDir,
+      });
+      if (shouldSkipForSpawnPermissions(res.error)) return;
+      assert.equal(res.status, 0, res.stderr || res.stdout);
+      assert.match(
+        res.stdout,
+        /\[XX\] Native hooks: invalid hooks\.json; Codex may skip OMX hook coverage until "omx setup --force" repairs it/,
+      );
+    } finally {
+      await rm(wd, { recursive: true, force: true });
+    }
+  });
+
   it('passes when legacy skill root is a link to the canonical skills directory', async () => {
     const wd = await mkdtemp(join(tmpdir(), 'omx-doctor-skill-link-'));
     try {
