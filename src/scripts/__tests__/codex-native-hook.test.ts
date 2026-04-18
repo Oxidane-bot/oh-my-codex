@@ -3503,7 +3503,7 @@ esac
     }
   });
 
-  it("does not auto-continue native Stop for a plain Codex session started outside OMX runtime", async () => {
+  it("auto-continues native Stop for permission-seeking prompts even outside OMX runtime", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "omx-native-hook-auto-nudge-plain-session-"));
     try {
       await dispatchCodexNativeHook(
@@ -3525,13 +3525,19 @@ esac
           session_id: "plain-stop-session",
           thread_id: "plain-thread",
           turn_id: "plain-turn-1",
-          last_assistant_message: "Keep going and finish the cleanup.",
+          last_assistant_message: "If you want, I can continue with the cleanup from here.",
         },
         { cwd },
       );
 
       assert.equal(result.omxEventName, "stop");
-      assert.equal(result.outputJson, null);
+      assert.deepEqual(result.outputJson, {
+        decision: "block",
+        reason: DEFAULT_AUTO_NUDGE_RESPONSE,
+        stopReason: "auto_nudge",
+        systemMessage:
+          "OMX native Stop detected a stall/permission-style handoff and continued the turn automatically.",
+      });
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
