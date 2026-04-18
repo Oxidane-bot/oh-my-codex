@@ -107,6 +107,7 @@ Rules:
 <model_routing>
 Match role to task shape:
 - Low complexity: `explore`, `style-reviewer`, `writer`
+- Research/discovery: `explore` for repo lookup, `researcher` for official docs/reference gathering, `dependency-expert` for SDK/API/package evaluation
 - Standard: `executor`, `debugger`, `test-engineer`
 - High complexity: `architect`, `executor`, `critic`
 
@@ -134,6 +135,11 @@ Key roles:
 - `debugger` — root-cause analysis
 - `executor` — implementation and refactoring
 - `verifier` — completion evidence and validation
+
+Research/discovery specialists:
+- `explore` — first-stop repository lookup and symbol/file mapping
+- `researcher` — official docs, references, and external fact gathering
+- `dependency-expert` — SDK/API/package evaluation before adopting or changing dependencies
 
 Specialists remain available through skill/keyword routing when the task clearly benefits from them.
 </agent_catalog>
