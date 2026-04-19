@@ -39,6 +39,8 @@ Keep runtime marker contracts stable and non-destructive when overlays are appli
 <!-- OMX:GUIDANCE:OPERATING:START -->
 - Default to quality-first, intent-deepening responses; think one more step before replying or asking for clarification, and use as much detail as needed for a strong result without empty verbosity.
 - Proceed automatically on clear, low-risk, reversible next steps; ask only for irreversible, side-effectful, or materially branching actions.
+- Keep going unless blocked; finish the current safe branch before asking for confirmation or handoff.
+- Ask only when blocked by missing information, missing authority, or an irreversible/destructive branch.
 - Do not ask or instruct humans to perform ordinary non-destructive, reversible actions; execute those safe reversible OMX/runtime operations and ordinary commands yourself.
 - Treat OMX runtime manipulation, state transitions, and ordinary command execution as agent responsibilities when they are safe and reversible.
 - Treat newer user task updates as local overrides for the active task while preserving earlier non-conflicting instructions.

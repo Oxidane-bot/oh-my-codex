@@ -13,6 +13,8 @@ const ROOT_TEMPLATE_PATTERNS = [
   rx('clear, low-risk, reversible next steps'),
   rx('do not ask or instruct humans.*ordinary non-destructive.*reversible actions'),
   rx('OMX runtime manipulation.*agent responsibilities'),
+  rx('Keep going unless blocked'),
+  rx('Ask only when blocked|Ask only when progress is impossible'),
   rx('local overrides?.*non-conflicting instructions'),
   rx('reflexive web/tool escalation'),
   rx('Choose the lane before acting'),
@@ -41,18 +43,24 @@ const CORE_ROLE_PATTERNS = {
     rx('reflexive web/tool escalation'),
     rx('local overrides?.*non-conflicting constraints'),
     rx('task is grounded and verified'),
+    rx('Keep going unless blocked'),
+    rx('Ask only when progress is impossible|Ask only when blocked'),
   ],
   planner: [
     rx('quality-first.*intent-deepening plan summaries'),
     rx('reflexive web/tool escalation'),
     rx('local overrides?.*non-conflicting constraints'),
     rx('plan is grounded in evidence'),
+    rx('Keep advancing the current planning branch unless blocked'),
+    rx('Ask only when a real planning blocker|Ask only when blocked'),
   ],
   verifier: [
     rx('quality-first, evidence-dense summaries'),
     rx('proof that matters|tool churn'),
     rx('verdict is grounded'),
     rx('non-conflicting acceptance criteria'),
+    rx('Keep gathering evidence until the verdict is grounded or blocked'),
+    rx('Ask only when the acceptance target is materially unclear|Ask only when blocked'),
   ],
 };
 

@@ -18,4 +18,15 @@ describe('prompt guidance contract', () => {
       assert.doesNotMatch(content, /Run `omx setup` to install all components\. Run `omx doctor` to verify installation\./);
     }
   });
+
+  it('tracked AGENTS and core prompt surfaces stay action-first and avoid permission-seeking softeners', () => {
+    const banned = [/if you[’']d like/i, /if you want/i, /would you like/i, /let me know if you want/i];
+
+    for (const surface of [...listTrackedAgentSurfaces(), ...CORE_ROLE_CONTRACTS.map((contract) => contract.path)]) {
+      const content = loadSurface(surface);
+      for (const pattern of banned) {
+        assert.doesNotMatch(content, pattern, `${surface} should not contain permission-seeking softeners matching ${pattern}`);
+      }
+    }
+  });
 });
