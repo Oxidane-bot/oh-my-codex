@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -155,5 +155,48 @@ describe("runPostinstall", () => {
 
     assert.equal(result.status, "setup-failed");
     assert.match(warnings.join("\n"), /non-fatal error: boom/);
+  });
+
+  it("runs interactive setup from INIT_CWD so setup scope state stays under the install root", async () => {
+    const installRoot = await mkdtemp(join(tmpdir(), "omx-postinstall-install-root-"));
+    const packageRoot = await mkdtemp(join(tmpdir(), "omx-postinstall-package-root-"));
+    const originalCwd = process.cwd();
+    const scopeFile = join(installRoot, ".omx", "setup-scope.json");
+    const packageScopeFile = join(packageRoot, ".omx", "setup-scope.json");
+
+    try {
+      process.chdir(packageRoot);
+
+      const result = await runPostinstall({
+        env: { npm_config_global: "true", INIT_CWD: installRoot },
+        getCurrentVersion: async () => "0.14.1",
+        isInteractive: () => true,
+        readStamp: async () => ({
+          installed_version: "0.14.0",
+          setup_completed_version: "0.14.0",
+          updated_at: "2026-04-20T00:00:00.000Z",
+        }),
+        runSetup: async () => {
+          await mkdir(join(process.cwd(), ".omx"), { recursive: true });
+          await writeFile(
+            join(process.cwd(), ".omx", "setup-scope.json"),
+            JSON.stringify({ scope: "project" }),
+          );
+        },
+        writeStamp: async () => {},
+      });
+
+      assert.equal(result.status, "setup-ran");
+      assert.equal(process.cwd(), packageRoot);
+      assert.equal(
+        JSON.parse(await readFile(scopeFile, "utf-8")).scope,
+        "project",
+      );
+      await assert.rejects(() => readFile(packageScopeFile, "utf-8"));
+    } finally {
+      process.chdir(originalCwd);
+      await rm(installRoot, { recursive: true, force: true });
+      await rm(packageRoot, { recursive: true, force: true });
+    }
   });
 });

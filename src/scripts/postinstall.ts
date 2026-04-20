@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   isInstallVersionBump,
@@ -44,6 +44,29 @@ function isTruthyEnv(value: string | undefined): boolean {
 
 export function isGlobalInstallLifecycle(env: NodeJS.ProcessEnv = process.env): boolean {
   return isTruthyEnv(env.npm_config_global) || env.npm_config_location === "global";
+}
+
+function resolveInstallRoot(env: NodeJS.ProcessEnv): string {
+  const initCwd = env.INIT_CWD?.trim();
+  return initCwd ? resolve(initCwd) : process.cwd();
+}
+
+async function runSetupFromInstallRoot(
+  runSetup: typeof setup,
+  installRoot: string,
+): Promise<void> {
+  const previousCwd = process.cwd();
+  if (previousCwd === installRoot) {
+    await runSetup();
+    return;
+  }
+
+  process.chdir(installRoot);
+  try {
+    await runSetup();
+  } finally {
+    process.chdir(previousCwd);
+  }
 }
 
 async function getCurrentVersion(): Promise<string | null> {
@@ -109,7 +132,7 @@ export async function runPostinstall(
   );
 
   try {
-    await resolved.runSetup();
+    await runSetupFromInstallRoot(resolved.runSetup, resolveInstallRoot(env));
     await resolved.writeStamp({
       installed_version: currentStampVersion,
       setup_completed_version: currentStampVersion,
