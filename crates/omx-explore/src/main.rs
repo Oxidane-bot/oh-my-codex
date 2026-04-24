@@ -211,9 +211,11 @@ fn usage() -> &'static str {
     "Usage: omx-explore --cwd <dir> --prompt <text> --prompt-file <explore-prompt.md> --instructions-file <AGENTS.md> --model-spark <model> --model-fallback <model>"
 }
 
+#[allow(unknown_lints, clippy::io_other_error)]
 fn invoke_codex(args: &Args, model: &str, prompt_contract: &str) -> io::Result<AttemptResult> {
     let codex_launch = resolve_codex_launch();
-    let allowlist = prepare_allowlist_environment().map_err(io::Error::other)?;
+    let allowlist =
+        prepare_allowlist_environment().map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
     let output_path = temp_output_path();
     let final_prompt = compose_exec_prompt(&args.prompt, prompt_contract);
     let mut command = Command::new(&codex_launch.program);
@@ -745,7 +747,7 @@ fn validate_shell_invocation(args: &[String]) -> Result<String, String> {
 
     let tokens: Vec<String> = command
         .split_whitespace()
-        .map(|token| token.trim_matches(['"', '\'']).to_string())
+        .map(|token| token.trim_matches(|ch| ch == '"' || ch == '\'').to_string())
         .filter(|token| !token.is_empty())
         .collect();
     let first = tokens
@@ -971,6 +973,7 @@ fn canonicalize_existing_prefix(path: &Path) -> Option<PathBuf> {
 }
 
 #[cfg(test)]
+#[allow(unused_unsafe)]
 mod tests {
     use super::*;
     use std::sync::{Mutex, OnceLock};
@@ -1162,7 +1165,7 @@ exec node "$basedir/../@openai/codex/bin/codex.js" "$@"
         create_dir_all(&good_bin).expect("create good bin");
 
         let blocked_directory = bad_bin.join("node");
-        create_dir_all(&blocked_directory).expect("create blocked directory");
+        create_dir_all(blocked_directory).expect("create blocked directory");
 
         let blocked_node = blocked_file_bin.join("node");
         write(&blocked_node, "#!/bin/sh\nexit 0\n").expect("write blocked file node");
@@ -1808,7 +1811,7 @@ printf '# Answer\nok\n' > "$output_path"
         unsafe {
             env::set_var("BASH_ENV", &bash_env);
         }
-        let mut child = Command::new(&bash_path);
+        let mut child = Command::new(bash_path);
         child
             .arg("--noprofile")
             .arg("--norc")

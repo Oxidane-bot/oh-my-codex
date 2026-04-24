@@ -13,6 +13,7 @@ resolver = "2"
 version = "0.14.4"
 
 edition = "2021"
+rust-version = "1.73"
 license = "MIT"
 repository = "https://github.com/Yeachan-Heo/oh-my-codex"
 
